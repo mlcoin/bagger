@@ -26,7 +26,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bigbagger/bagger/y"
+	"github.com/bigbagger/bagger/butils"
 	"github.com/stretchr/testify/require"
 )
 
@@ -109,7 +109,7 @@ func TestDropAllRace(t *testing.T) {
 
 	N := 10000
 	// Start a goroutine to keep trying to write to DB while DropAll happens.
-	closer := y.NewCloser(1)
+	closer := butils.NewCloser(1)
 	go func() {
 		defer closer.Done()
 		ticker := time.NewTicker(time.Millisecond)

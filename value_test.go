@@ -25,8 +25,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/bigbagger/bagger/options"
-	"github.com/bigbagger/bagger/y"
+	"github.com/bigbagger/bagger/boptions"
+	"github.com/bigbagger/bagger/butils"
 	humanize "github.com/dustin/go-humanize"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/net/trace"
@@ -34,7 +34,7 @@ import (
 
 func TestValueBasic(t *testing.T) {
 	dir, err := ioutil.TempDir("", "bagger")
-	y.Check(err)
+	butils.Check(err)
 	defer os.RemoveAll(dir)
 
 	kv, _ := Open(getTestOptions(dir))
@@ -64,7 +64,7 @@ func TestValueBasic(t *testing.T) {
 	require.Len(t, b.Ptrs, 2)
 	t.Logf("Pointer written: %+v %+v\n", b.Ptrs[0], b.Ptrs[1])
 
-	s := new(y.Slice)
+	s := new(butils.Slice)
 	buf1, cb1, err1 := log.readValueBytes(b.Ptrs[0], s)
 	buf2, cb2, err2 := log.readValueBytes(b.Ptrs[1], s)
 	require.NoError(t, err1)
@@ -674,7 +674,7 @@ func TestPenultimateLogCorruption(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(dir)
 	opt := getTestOptions(dir)
-	opt.ValueLogLoadingMode = options.FileIO
+	opt.ValueLogLoadingMode = boptions.FileIO
 	// Each txn generates at least two entries. 3 txns will fit each file.
 	opt.ValueLogMaxEntries = 5
 
@@ -743,7 +743,7 @@ func (th *testHelper) value() []byte {
 		return th.val
 	}
 	th.val = make([]byte, 100)
-	y.Check2(rand.Read(th.val))
+	butils.Check2(rand.Read(th.val))
 	return th.val
 }
 
@@ -782,7 +782,7 @@ func (th *testHelper) readRange(from, to int) {
 // version, causing the data to not be returned.
 func TestBug578(t *testing.T) {
 	dir, err := ioutil.TempDir("", "bagger")
-	y.Check(err)
+	butils.Check(err)
 	defer os.RemoveAll(dir)
 
 	opts := DefaultOptions
@@ -825,11 +825,11 @@ func BenchmarkReadWrite(b *testing.B) {
 		for _, rw := range rwRatio {
 			b.Run(fmt.Sprintf("%3.1f,%04d", rw, vsz), func(b *testing.B) {
 				dir, err := ioutil.TempDir("", "vlog-benchmark")
-				y.Check(err)
+				butils.Check(err)
 				defer os.RemoveAll(dir)
 
 				db, err := Open(getTestOptions(dir))
-				y.Check(err)
+				butils.Check(err)
 
 				vl := db.vlog
 				b.ResetTimer()
@@ -856,7 +856,7 @@ func BenchmarkReadWrite(b *testing.B) {
 							b.Fatalf("Zero length of ptrs")
 						}
 						idx := rand.Intn(ln)
-						s := new(y.Slice)
+						s := new(butils.Slice)
 						buf, cb, err := vl.readValueBytes(ptrs[idx], s)
 						if err != nil {
 							b.Fatalf("Benchmark Read: %v", err)

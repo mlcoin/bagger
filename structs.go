@@ -23,7 +23,7 @@ import (
 	"fmt"
 	"hash/crc32"
 
-	"github.com/bigbagger/bagger/y"
+	"github.com/bigbagger/bagger/butils"
 )
 
 type valuePointer struct {
@@ -76,7 +76,7 @@ const (
 )
 
 func (h header) Encode(out []byte) {
-	y.AssertTrue(len(out) >= headerBufSize)
+	butils.AssertTrue(len(out) >= headerBufSize)
 	binary.BigEndian.PutUint32(out[0:4], h.klen)
 	binary.BigEndian.PutUint32(out[4:8], h.vlen)
 	binary.BigEndian.PutUint64(out[8:16], h.expiresAt)
@@ -125,7 +125,7 @@ func encodeEntry(e *Entry, buf *bytes.Buffer) (int, error) {
 	var headerEnc [headerBufSize]byte
 	h.Encode(headerEnc[:])
 
-	hash := crc32.New(y.CastagnoliCrcTable)
+	hash := crc32.New(butils.CastagnoliCrcTable)
 
 	buf.Write(headerEnc[:])
 	hash.Write(headerEnc[:])

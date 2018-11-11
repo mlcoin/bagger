@@ -28,8 +28,8 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/bigbagger/bagger/protos"
-	"github.com/bigbagger/bagger/y"
+	"github.com/bigbagger/bagger/bprotos"
+	"github.com/bigbagger/bagger/butils"
 	"github.com/pkg/errors"
 )
 
@@ -62,7 +62,7 @@ func createManifest() Manifest {
 // levelManifest contains information about LSM tree levels
 // in the MANIFEST file.
 type levelManifest struct {
-	Tables map[uint64]struct{} // Set of table id's
+	Tables map[uint64]struct{} // Set of btable id's
 }
 
 // tableManifest contains information about a specific level
@@ -96,8 +96,8 @@ const (
 
 // asChanges returns a sequence of changes that could be used to recreate the Manifest in its
 // present state.
-func (m *Manifest) asChanges() []*protos.ManifestChange {
-	changes := make([]*protos.ManifestChange, 0, len(m.Tables))
+func (m *Manifest) asChanges() []*bprotos.ManifestChange {
+	changes := make([]*bprotos.ManifestChange, 0, len(m.Tables))
 	for id, tm := range m.Tables {
 		changes = append(changes, makeTableCreateChange(id, int(tm.Level)))
 	}
@@ -105,9 +105,9 @@ func (m *Manifest) asChanges() []*protos.ManifestChange {
 }
 
 func (m *Manifest) clone() Manifest {
-	changeSet := protos.ManifestChangeSet{Changes: m.asChanges()}
+	changeSet := bprotos.ManifestChangeSet{Changes: m.asChanges()}
 	ret := createManifest()
-	y.Check(applyChangeSet(&ret, &changeSet))
+	butils.Check(applyChangeSet(&ret, &changeSet))
 	return ret
 }
 
@@ -121,9 +121,9 @@ func helpOpenOrCreateManifestFile(dir string, readOnly bool, deletionsThreshold 
 	path := filepath.Join(dir, ManifestFilename)
 	var flags uint32
 	if readOnly {
-		flags |= y.ReadOnly
+		flags |= butils.ReadOnly
 	}
-	fp, err := y.OpenExistingFile(path, flags) // We explicitly sync in addChanges, outside the lock.
+	fp, err := butils.OpenExistingFile(path, flags) // We explicitly sync in addChanges, outside the lock.
 	if err != nil {
 		if !os.IsNotExist(err) {
 			return nil, Manifest{}, err
@@ -136,7 +136,7 @@ func helpOpenOrCreateManifestFile(dir string, readOnly bool, deletionsThreshold 
 		if err != nil {
 			return nil, Manifest{}, err
 		}
-		y.AssertTrue(netCreations == 0)
+		butils.AssertTrue(netCreations == 0)
 		mf := &manifestFile{
 			fp:                        fp,
 			directory:                 dir,
@@ -181,8 +181,8 @@ func (mf *manifestFile) close() error {
 // we replay the MANIFEST file, we'll either replay all the changes or none of them.  (The truth of
 // this depends on the filesystem -- some might append garbage data if a system crash happens at
 // the wrong time.)
-func (mf *manifestFile) addChanges(changesParam []*protos.ManifestChange) error {
-	changes := protos.ManifestChangeSet{Changes: changesParam}
+func (mf *manifestFile) addChanges(changesParam []*bprotos.ManifestChange) error {
+	changes := bprotos.ManifestChangeSet{Changes: changesParam}
 	buf, err := changes.Marshal()
 	if err != nil {
 		return err
@@ -204,7 +204,7 @@ func (mf *manifestFile) addChanges(changesParam []*protos.ManifestChange) error 
 	} else {
 		var lenCrcBuf [8]byte
 		binary.BigEndian.PutUint32(lenCrcBuf[0:4], uint32(len(buf)))
-		binary.BigEndian.PutUint32(lenCrcBuf[4:8], crc32.Checksum(buf, y.CastagnoliCrcTable))
+		binary.BigEndian.PutUint32(lenCrcBuf[4:8], crc32.Checksum(buf, butils.CastagnoliCrcTable))
 		buf = append(lenCrcBuf[:], buf...)
 		if _, err := mf.fp.Write(buf); err != nil {
 			mf.appendLock.Unlock()
@@ -225,7 +225,7 @@ const magicVersion = 4
 func helpRewrite(dir string, m *Manifest) (*os.File, int, error) {
 	rewritePath := filepath.Join(dir, manifestRewriteFilename)
 	// We explicitly sync.
-	fp, err := y.OpenTruncFile(rewritePath, false)
+	fp, err := butils.OpenTruncFile(rewritePath, false)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -236,7 +236,7 @@ func helpRewrite(dir string, m *Manifest) (*os.File, int, error) {
 
 	netCreations := len(m.Tables)
 	changes := m.asChanges()
-	set := protos.ManifestChangeSet{Changes: changes}
+	set := bprotos.ManifestChangeSet{Changes: changes}
 
 	changeBuf, err := set.Marshal()
 	if err != nil {
@@ -245,7 +245,7 @@ func helpRewrite(dir string, m *Manifest) (*os.File, int, error) {
 	}
 	var lenCrcBuf [8]byte
 	binary.BigEndian.PutUint32(lenCrcBuf[0:4], uint32(len(changeBuf)))
-	binary.BigEndian.PutUint32(lenCrcBuf[4:8], crc32.Checksum(changeBuf, y.CastagnoliCrcTable))
+	binary.BigEndian.PutUint32(lenCrcBuf[4:8], crc32.Checksum(changeBuf, butils.CastagnoliCrcTable))
 	buf = append(buf, lenCrcBuf[:]...)
 	buf = append(buf, changeBuf...)
 	if _, err := fp.Write(buf); err != nil {
@@ -265,7 +265,7 @@ func helpRewrite(dir string, m *Manifest) (*os.File, int, error) {
 	if err := os.Rename(rewritePath, manifestPath); err != nil {
 		return nil, 0, err
 	}
-	fp, err = y.OpenExistingFile(manifestPath, 0)
+	fp, err = butils.OpenExistingFile(manifestPath, 0)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -362,11 +362,11 @@ func ReplayManifestFile(fp *os.File) (ret Manifest, truncOffset int64, err error
 			}
 			return Manifest{}, 0, err
 		}
-		if crc32.Checksum(buf, y.CastagnoliCrcTable) != binary.BigEndian.Uint32(lenCrcBuf[4:8]) {
+		if crc32.Checksum(buf, butils.CastagnoliCrcTable) != binary.BigEndian.Uint32(lenCrcBuf[4:8]) {
 			break
 		}
 
-		var changeSet protos.ManifestChangeSet
+		var changeSet bprotos.ManifestChangeSet
 		if err := changeSet.Unmarshal(buf); err != nil {
 			return Manifest{}, 0, err
 		}
@@ -379,11 +379,11 @@ func ReplayManifestFile(fp *os.File) (ret Manifest, truncOffset int64, err error
 	return build, offset, err
 }
 
-func applyManifestChange(build *Manifest, tc *protos.ManifestChange) error {
+func applyManifestChange(build *Manifest, tc *bprotos.ManifestChange) error {
 	switch tc.Op {
-	case protos.ManifestChange_CREATE:
+	case bprotos.ManifestChange_CREATE:
 		if _, ok := build.Tables[tc.Id]; ok {
-			return fmt.Errorf("MANIFEST invalid, table %d exists", tc.Id)
+			return fmt.Errorf("MANIFEST invalid, btable %d exists", tc.Id)
 		}
 		build.Tables[tc.Id] = tableManifest{
 			Level: uint8(tc.Level),
@@ -393,10 +393,10 @@ func applyManifestChange(build *Manifest, tc *protos.ManifestChange) error {
 		}
 		build.Levels[tc.Level].Tables[tc.Id] = struct{}{}
 		build.Creations++
-	case protos.ManifestChange_DELETE:
+	case bprotos.ManifestChange_DELETE:
 		tm, ok := build.Tables[tc.Id]
 		if !ok {
-			return fmt.Errorf("MANIFEST removes non-existing table %d", tc.Id)
+			return fmt.Errorf("MANIFEST removes non-existing btable %d", tc.Id)
 		}
 		delete(build.Levels[tm.Level].Tables, tc.Id)
 		delete(build.Tables, tc.Id)
@@ -409,7 +409,7 @@ func applyManifestChange(build *Manifest, tc *protos.ManifestChange) error {
 
 // This is not a "recoverable" error -- opening the KV store fails because the MANIFEST file is
 // just plain broken.
-func applyChangeSet(build *Manifest, changeSet *protos.ManifestChangeSet) error {
+func applyChangeSet(build *Manifest, changeSet *bprotos.ManifestChangeSet) error {
 	for _, change := range changeSet.Changes {
 		if err := applyManifestChange(build, change); err != nil {
 			return err
@@ -418,17 +418,17 @@ func applyChangeSet(build *Manifest, changeSet *protos.ManifestChangeSet) error 
 	return nil
 }
 
-func makeTableCreateChange(id uint64, level int) *protos.ManifestChange {
-	return &protos.ManifestChange{
+func makeTableCreateChange(id uint64, level int) *bprotos.ManifestChange {
+	return &bprotos.ManifestChange{
 		Id:    id,
-		Op:    protos.ManifestChange_CREATE,
+		Op:    bprotos.ManifestChange_CREATE,
 		Level: uint32(level),
 	}
 }
 
-func makeTableDeleteChange(id uint64) *protos.ManifestChange {
-	return &protos.ManifestChange{
+func makeTableDeleteChange(id uint64) *bprotos.ManifestChange {
+	return &bprotos.ManifestChange{
 		Id: id,
-		Op: protos.ManifestChange_DELETE,
+		Op: bprotos.ManifestChange_DELETE,
 	}
 }

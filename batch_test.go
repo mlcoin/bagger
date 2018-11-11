@@ -47,7 +47,7 @@ func TestWriteBatch(t *testing.T) {
 			require.NoError(t, wb.Delete(key(i)))
 		}
 		require.NoError(t, wb.Flush())
-		t.Logf("Time taken for %d writes (w/ test options): %s\n", N+M, time.Since(start))
+		t.Logf("Time taken for %d writes (w/ test boptions): %s\n", N+M, time.Since(start))
 
 		err := db.View(func(txn *Txn) error {
 			itr := txn.NewIterator(DefaultIteratorOptions)

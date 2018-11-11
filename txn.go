@@ -28,7 +28,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/bigbagger/bagger/y"
+	"github.com/bigbagger/bagger/butils"
 	farm "github.com/dgryski/go-farm"
 	"github.com/pkg/errors"
 )
@@ -45,12 +45,12 @@ type oracle struct {
 	nextTxnTs   uint64
 
 	// Used to block NewTransaction, so all previous commits are visible to a new read.
-	txnMark *y.WaterMark
+	txnMark *butils.WaterMark
 
 	// Either of these is used to determine which versions can be permanently
 	// discarded during compaction.
-	discardTs uint64       // Used by ManagedDB.
-	readMark  *y.WaterMark // Used by DB.
+	discardTs uint64            // Used by ManagedDB.
+	readMark  *butils.WaterMark // Used by DB.
 
 	// commits stores a key fingerprint and latest commit counter for it.
 	// refCount is used to clear out commits map to avoid a memory blowup.
@@ -65,8 +65,8 @@ func newOracle(opt Options) *oracle {
 		//
 		// WaterMarks must be 64-bit aligned for atomic package, hence we must use pointers here.
 		// See https://golang.org/pkg/sync/atomic/#pkg-note-BUG.
-		readMark: &y.WaterMark{Name: "bagger.PendingReads"},
-		txnMark:  &y.WaterMark{Name: "bagger.TxnTimestamp"},
+		readMark: &butils.WaterMark{Name: "bagger.PendingReads"},
+		txnMark:  &butils.WaterMark{Name: "bagger.TxnTimestamp"},
 	}
 	orc.readMark.Init()
 	orc.txnMark.Init()
@@ -110,7 +110,7 @@ func (o *oracle) readTs() uint64 {
 	// timestamp and are going through the write to value log and LSM tree
 	// process. Not waiting here could mean that some txns which have been
 	// committed would not be read.
-	y.Check(o.txnMark.WaitForMark(context.Background(), readTs))
+	butils.Check(o.txnMark.WaitForMark(context.Background(), readTs))
 	return readTs
 }
 
@@ -221,7 +221,7 @@ func (pi *pendingWritesIterator) Rewind() {
 }
 
 func (pi *pendingWritesIterator) Seek(key []byte) {
-	key = y.ParseKey(key)
+	key = butils.ParseKey(key)
 	pi.nextIdx = sort.Search(len(pi.entries), func(idx int) bool {
 		cmp := bytes.Compare(pi.entries[idx].Key, key)
 		if !pi.reversed {
@@ -232,15 +232,15 @@ func (pi *pendingWritesIterator) Seek(key []byte) {
 }
 
 func (pi *pendingWritesIterator) Key() []byte {
-	y.AssertTrue(pi.Valid())
+	butils.AssertTrue(pi.Valid())
 	entry := pi.entries[pi.nextIdx]
-	return y.KeyWithTs(entry.Key, pi.readTs)
+	return butils.KeyWithTs(entry.Key, pi.readTs)
 }
 
-func (pi *pendingWritesIterator) Value() y.ValueStruct {
-	y.AssertTrue(pi.Valid())
+func (pi *pendingWritesIterator) Value() butils.ValueStruct {
+	butils.AssertTrue(pi.Valid())
 	entry := pi.entries[pi.nextIdx]
-	return y.ValueStruct{
+	return butils.ValueStruct{
 		Value:     entry.Value,
 		Meta:      entry.meta,
 		UserMeta:  entry.UserMeta,
@@ -324,7 +324,7 @@ func (txn *Txn) SetWithMeta(key, val []byte, meta byte) error {
 // versions of the key.
 //
 // This method is only useful if you have set a higher limit for
-// options.NumVersionsToKeep. The default setting is 1, in which case, this
+// boptions.NumVersionsToKeep. The default setting is 1, in which case, this
 // function doesn't add any more benefit than just calling the normal
 // SetWithMeta (or Set) function. If however, you have a higher setting for
 // NumVersionsToKeep (in Dgraph, we set it to infinity), you can use this method
@@ -375,7 +375,7 @@ func (txn *Txn) modify(e *Entry) error {
 	case bytes.HasPrefix(e.Key, baggerPrefix):
 		return ErrInvalidKey
 	case len(e.Key) > maxKeySize:
-		// Key length can't be more than uint16, as determined by table::header.  To
+		// Key length can't be more than uint16, as determined by btable::header.  To
 		// keep things safe and allow bagger move prefix and a timestamp suffix, let's
 		// cut it down to 65000, instead of using 65536.
 		return exceedsSize("Key", maxKeySize, e.Key)
@@ -448,7 +448,7 @@ func (txn *Txn) Get(key []byte) (item *Item, rerr error) {
 		txn.addReadKey(key)
 	}
 
-	seek := y.KeyWithTs(key, txn.readTs)
+	seek := butils.KeyWithTs(key, txn.readTs)
 	vs, err := txn.db.get(seek)
 	if err != nil {
 		return nil, errors.Wrapf(err, "DB::Get key: %q", key)
@@ -525,13 +525,13 @@ func (txn *Txn) commitAndSend() (func() error, error) {
 
 		// Suffix the keys with commit ts, so the key versions are sorted in
 		// descending order of commit timestamp.
-		e.Key = y.KeyWithTs(e.Key, commitTs)
+		e.Key = butils.KeyWithTs(e.Key, commitTs)
 		e.meta |= bitTxn
 		entries = append(entries, e)
 	}
 	// log.Printf("%s\n", b.String())
 	e := &Entry{
-		Key:   y.KeyWithTs(txnKey, commitTs),
+		Key:   butils.KeyWithTs(txnKey, commitTs),
 		Value: []byte(strconv.FormatUint(commitTs, 10)),
 		meta:  bitFinTxn,
 	}

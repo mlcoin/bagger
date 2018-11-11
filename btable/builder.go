@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-package table
+package btable
 
 import (
 	"bytes"
@@ -24,7 +24,7 @@ import (
 	"math"
 
 	"github.com/AndreasBriese/bbloom"
-	"github.com/bigbagger/bagger/y"
+	"github.com/bigbagger/bagger/butils"
 )
 
 var (
@@ -64,7 +64,7 @@ func (h *header) Decode(buf []byte) int {
 // Size returns size of the header. Currently it's just a constant.
 func (h header) Size() int { return 10 }
 
-// Builder is used in building a table.
+// Builder is used in building a btable.
 type Builder struct {
 	counter int // Number of keys written for the current block.
 
@@ -109,11 +109,11 @@ func (b Builder) keyDiff(newKey []byte) []byte {
 	return newKey[i:]
 }
 
-func (b *Builder) addHelper(key []byte, v y.ValueStruct) {
+func (b *Builder) addHelper(key []byte, v butils.ValueStruct) {
 	// Add key to bloom filter.
 	if len(key) > 0 {
 		var klen [2]byte
-		keyNoTs := y.ParseKey(key)
+		keyNoTs := butils.ParseKey(key)
 		binary.BigEndian.PutUint16(klen[:], uint16(len(keyNoTs)))
 		b.keyBuf.Write(klen[:])
 		b.keyBuf.Write(keyNoTs)
@@ -152,12 +152,12 @@ func (b *Builder) addHelper(key []byte, v y.ValueStruct) {
 func (b *Builder) finishBlock() {
 	// When we are at the end of the block and Valid=false, and the user wants to do a Prev,
 	// we need a dummy header to tell us the offset of the previous key-value pair.
-	b.addHelper([]byte{}, y.ValueStruct{})
+	b.addHelper([]byte{}, butils.ValueStruct{})
 }
 
 // Add adds a key-value pair to the block.
 // If doNotRestart is true, we will not restart even if b.counter >= restartInterval.
-func (b *Builder) Add(key []byte, value y.ValueStruct) error {
+func (b *Builder) Add(key []byte, value butils.ValueStruct) error {
 	if b.counter >= restartInterval {
 		b.finishBlock()
 		// Start a new block. Initialize the block.
@@ -182,7 +182,7 @@ func (b *Builder) ReachedCapacity(cap int64) bool {
 	return int64(estimateSz) > cap
 }
 
-// blockIndex generates the block index for the table.
+// blockIndex generates the block index for the btable.
 // It is mainly a list of all the block base offsets.
 func (b *Builder) blockIndex() []byte {
 	// Store the end offset, so we know the length of the final block.
@@ -200,7 +200,7 @@ func (b *Builder) blockIndex() []byte {
 	return out
 }
 
-// Finish finishes the table by appending the index.
+// Finish finishes the btable by appending the index.
 func (b *Builder) Finish() []byte {
 	bf := bbloom.New(float64(b.keyCount), 0.01)
 	var klen [2]byte
@@ -209,14 +209,14 @@ func (b *Builder) Finish() []byte {
 		if _, err := b.keyBuf.Read(klen[:]); err == io.EOF {
 			break
 		} else if err != nil {
-			y.Check(err)
+			butils.Check(err)
 		}
 		kl := int(binary.BigEndian.Uint16(klen[:]))
 		if cap(key) < kl {
 			key = make([]byte, 2*int(kl)) // 2 * uint16 will overflow
 		}
 		key = key[:kl]
-		y.Check2(b.keyBuf.Read(key))
+		butils.Check2(b.keyBuf.Read(key))
 		bf.Add(key)
 	}
 
@@ -227,7 +227,7 @@ func (b *Builder) Finish() []byte {
 	// Write bloom filter.
 	bdata := bf.JSONMarshal()
 	n, err := b.buf.Write(bdata)
-	y.Check(err)
+	butils.Check(err)
 	var buf [4]byte
 	binary.BigEndian.PutUint32(buf[:], uint32(n))
 	b.buf.Write(buf[:])

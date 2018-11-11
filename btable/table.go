@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-package table
+package btable
 
 import (
 	"encoding/binary"
@@ -29,8 +29,8 @@ import (
 	"sync/atomic"
 
 	"github.com/AndreasBriese/bbloom"
-	"github.com/bigbagger/bagger/options"
-	"github.com/bigbagger/bagger/y"
+	"github.com/bigbagger/bagger/boptions"
+	"github.com/bigbagger/bagger/butils"
 	"github.com/pkg/errors"
 )
 
@@ -42,7 +42,7 @@ type keyOffset struct {
 	len    int
 }
 
-// Table represents a loaded table file with the info we have about it
+// Table represents a loaded btable file with the info we have about it
 type Table struct {
 	sync.Mutex
 
@@ -52,7 +52,7 @@ type Table struct {
 	blockIndex []keyOffset
 	ref        int32 // For file garbage collection.  Atomic.
 
-	loadingMode options.FileLoadingMode
+	loadingMode boptions.FileLoadingMode
 	mmap        []byte // Memory mapped.
 
 	// The following are initialized once and const.
@@ -67,7 +67,7 @@ func (t *Table) IncrRef() {
 	atomic.AddInt32(&t.ref, 1)
 }
 
-// DecrRef decrements the refcount and possibly deletes the table
+// DecrRef decrements the refcount and possibly deletes the btable
 func (t *Table) DecrRef() error {
 	newRef := atomic.AddInt32(&t.ref, -1)
 	if newRef == 0 {
@@ -75,8 +75,8 @@ func (t *Table) DecrRef() error {
 		// at least one reference pointing to them.
 
 		// It's necessary to delete windows files
-		if t.loadingMode == options.MemoryMap {
-			y.Munmap(t.mmap)
+		if t.loadingMode == boptions.MemoryMap {
+			butils.Munmap(t.mmap)
 		}
 		if err := t.fd.Truncate(0); err != nil {
 			// This is very important to let the FS know that the file is deleted.
@@ -102,17 +102,17 @@ func (b block) NewIterator() *blockIterator {
 	return &blockIterator{data: b.data}
 }
 
-// OpenTable assumes file has only one table and opens it.  Takes ownership of fd upon function
-// entry.  Returns a table with one reference count on it (decrementing which may delete the file!
+// OpenTable assumes file has only one btable and opens it.  Takes ownership of fd upon function
+// entry.  Returns a btable with one reference count on it (decrementing which may delete the file!
 // -- consider t.Close() instead).  The fd has to writeable because we call Truncate on it before
 // deleting.
-func OpenTable(fd *os.File, loadingMode options.FileLoadingMode) (*Table, error) {
+func OpenTable(fd *os.File, loadingMode boptions.FileLoadingMode) (*Table, error) {
 	fileInfo, err := fd.Stat()
 	if err != nil {
 		// It's OK to ignore fd.Close() errs in this function because we have only read
 		// from the file.
 		_ = fd.Close()
-		return nil, y.Wrap(err)
+		return nil, butils.Wrap(err)
 	}
 
 	filename := fileInfo.Name()
@@ -130,22 +130,22 @@ func OpenTable(fd *os.File, loadingMode options.FileLoadingMode) (*Table, error)
 
 	t.tableSize = int(fileInfo.Size())
 
-	if loadingMode == options.MemoryMap {
-		t.mmap, err = y.Mmap(fd, false, fileInfo.Size())
+	if loadingMode == boptions.MemoryMap {
+		t.mmap, err = butils.Mmap(fd, false, fileInfo.Size())
 		if err != nil {
 			_ = fd.Close()
-			return nil, y.Wrapf(err, "Unable to map file")
+			return nil, butils.Wrapf(err, "Unable to map file")
 		}
-	} else if loadingMode == options.LoadToRAM {
+	} else if loadingMode == boptions.LoadToRAM {
 		err = t.loadToRAM()
 		if err != nil {
 			_ = fd.Close()
-			return nil, y.Wrap(err)
+			return nil, butils.Wrap(err)
 		}
 	}
 
 	if err := t.readIndex(); err != nil {
-		return nil, y.Wrap(err)
+		return nil, butils.Wrap(err)
 	}
 
 	it := t.NewIterator(false)
@@ -164,10 +164,10 @@ func OpenTable(fd *os.File, loadingMode options.FileLoadingMode) (*Table, error)
 	return t, nil
 }
 
-// Close closes the open table.  (Releases resources back to the OS.)
+// Close closes the open btable.  (Releases resources back to the OS.)
 func (t *Table) Close() error {
-	if t.loadingMode == options.MemoryMap {
-		y.Munmap(t.mmap)
+	if t.loadingMode == boptions.MemoryMap {
+		butils.Munmap(t.mmap)
 	}
 
 	return t.fd.Close()
@@ -176,21 +176,21 @@ func (t *Table) Close() error {
 func (t *Table) read(off int, sz int) ([]byte, error) {
 	if len(t.mmap) > 0 {
 		if len(t.mmap[off:]) < sz {
-			return nil, y.ErrEOF
+			return nil, butils.ErrEOF
 		}
 		return t.mmap[off : off+sz], nil
 	}
 
 	res := make([]byte, sz)
 	nbr, err := t.fd.ReadAt(res, int64(off))
-	y.NumReads.Add(1)
-	y.NumBytesRead.Add(int64(nbr))
+	butils.NumReads.Add(1)
+	butils.NumBytesRead.Add(int64(nbr))
 	return res, err
 }
 
 func (t *Table) readNoFail(off int, sz int) []byte {
 	res, err := t.read(off, sz)
-	y.Check(err)
+	butils.Check(err)
 	return res
 }
 
@@ -256,7 +256,7 @@ func (t *Table) readIndex() error {
 				}
 
 				h.Decode(buf)
-				y.AssertTruef(h.plen == 0, "Key offset: %+v, h.plen = %d", *ko, h.plen)
+				butils.AssertTruef(h.plen == 0, "Key offset: %+v, h.plen = %d", *ko, h.plen)
 
 				offset += h.Size()
 				buf = make([]byte, h.klen)
@@ -265,7 +265,7 @@ func (t *Table) readIndex() error {
 					che <- errors.Wrap(err, "While reading first key in block")
 					continue
 				}
-				y.AssertTrue(len(buf) == copy(buf, out))
+				butils.AssertTrue(len(buf) == copy(buf, out))
 
 				ko.key = buf
 				che <- nil
@@ -288,7 +288,7 @@ func (t *Table) readIndex() error {
 }
 
 func (t *Table) block(idx int) (block, error) {
-	y.AssertTruef(idx >= 0, "idx=%d", idx)
+	butils.AssertTruef(idx >= 0, "idx=%d", idx)
 	if idx >= len(t.blockIndex) {
 		return block{}, errors.New("block out of index")
 	}
@@ -314,10 +314,10 @@ func (t *Table) Biggest() []byte { return t.biggest }
 // Filename is NOT the file name.  Just kidding, it is.
 func (t *Table) Filename() string { return t.fd.Name() }
 
-// ID is the table's ID number (used to make the file name).
+// ID is the btable's ID number (used to make the file name).
 func (t *Table) ID() uint64 { return t.id }
 
-// DoesNotHave returns true if (but not "only if") the table does not have the key.  It does a
+// DoesNotHave returns true if (but not "only if") the btable does not have the key.  It does a
 // bloom filter lookup.
 func (t *Table) DoesNotHave(key []byte) bool { return !t.bf.Has(key) }
 
@@ -333,7 +333,7 @@ func ParseFileID(name string) (uint64, bool) {
 	if err != nil {
 		return 0, false
 	}
-	y.AssertTrue(id >= 0)
+	butils.AssertTrue(id >= 0)
 	return uint64(id), true
 }
 
@@ -342,7 +342,7 @@ func IDToFilename(id uint64) string {
 	return fmt.Sprintf("%06d", id) + fileSuffix
 }
 
-// NewFilename should be named TableFilepath -- it combines the dir with the ID to make a table
+// NewFilename should be named TableFilepath -- it combines the dir with the ID to make a btable
 // filepath.
 func NewFilename(id uint64, dir string) string {
 	return filepath.Join(dir, IDToFilename(id))
@@ -352,9 +352,9 @@ func (t *Table) loadToRAM() error {
 	t.mmap = make([]byte, t.tableSize)
 	read, err := t.fd.ReadAt(t.mmap, 0)
 	if err != nil || read != t.tableSize {
-		return y.Wrapf(err, "Unable to load file in memory. Table file: %s", t.Filename())
+		return butils.Wrapf(err, "Unable to load file in memory. Table file: %s", t.Filename())
 	}
-	y.NumReads.Add(1)
-	y.NumBytesRead.Add(int64(read))
+	butils.NumReads.Add(1)
+	butils.NumBytesRead.Add(int64(read))
 	return nil
 }

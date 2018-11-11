@@ -27,9 +27,9 @@ import (
 
 	"golang.org/x/net/trace"
 
-	"github.com/bigbagger/bagger/protos"
-	"github.com/bigbagger/bagger/table"
-	"github.com/bigbagger/bagger/y"
+	"github.com/bigbagger/bagger/bprotos"
+	"github.com/bigbagger/bagger/btable"
+	"github.com/bigbagger/bagger/butils"
 	"github.com/pkg/errors"
 )
 
@@ -49,14 +49,14 @@ var (
 	lastUnstalled time.Time
 )
 
-// revertToManifest checks that all necessary table files exist and removes all table files not
-// referenced by the manifest.  idMap is a set of table file id's that were read from the directory
+// revertToManifest checks that all necessary btable files exist and removes all btable files not
+// referenced by the manifest.  idMap is a set of btable file id's that were read from the directory
 // listing.
 func revertToManifest(kv *DB, mf *Manifest, idMap map[uint64]struct{}) error {
 	// 1. Check all files in manifest exist.
 	for id := range mf.Tables {
 		if _, ok := idMap[id]; !ok {
-			return fmt.Errorf("file does not exist for table %d", id)
+			return fmt.Errorf("file does not exist for btable %d", id)
 		}
 	}
 
@@ -64,9 +64,9 @@ func revertToManifest(kv *DB, mf *Manifest, idMap map[uint64]struct{}) error {
 	for id := range idMap {
 		if _, ok := mf.Tables[id]; !ok {
 			kv.elog.Printf("Table file %d not referenced in MANIFEST\n", id)
-			filename := table.NewFilename(id, kv.opt.Dir)
+			filename := btable.NewFilename(id, kv.opt.Dir)
 			if err := os.Remove(filename); err != nil {
-				return y.Wrapf(err, "While removing table %d", id)
+				return butils.Wrapf(err, "While removing btable %d", id)
 			}
 		}
 	}
@@ -75,7 +75,7 @@ func revertToManifest(kv *DB, mf *Manifest, idMap map[uint64]struct{}) error {
 }
 
 func newLevelsController(kv *DB, mf *Manifest) (*levelsController, error) {
-	y.AssertTrue(kv.opt.NumLevelZeroTablesStall > kv.opt.NumLevelZeroTables)
+	butils.AssertTrue(kv.opt.NumLevelZeroTablesStall > kv.opt.NumLevelZeroTables)
 	s := &levelsController{
 		kv:     kv,
 		elog:   kv.elog,
@@ -102,24 +102,24 @@ func newLevelsController(kv *DB, mf *Manifest) (*levelsController, error) {
 	}
 
 	// Some files may be deleted. Let's reload.
-	tables := make([][]*table.Table, kv.opt.MaxLevels)
+	tables := make([][]*btable.Table, kv.opt.MaxLevels)
 	var maxFileID uint64
 	for fileID, tableManifest := range mf.Tables {
-		fname := table.NewFilename(fileID, kv.opt.Dir)
-		var flags uint32 = y.Sync
+		fname := btable.NewFilename(fileID, kv.opt.Dir)
+		var flags uint32 = butils.Sync
 		if kv.opt.ReadOnly {
-			flags |= y.ReadOnly
+			flags |= butils.ReadOnly
 		}
-		fd, err := y.OpenExistingFile(fname, flags)
+		fd, err := butils.OpenExistingFile(fname, flags)
 		if err != nil {
 			closeAllTables(tables)
 			return nil, errors.Wrapf(err, "Opening file: %q", fname)
 		}
 
-		t, err := table.OpenTable(fd, kv.opt.TableLoadingMode)
+		t, err := btable.OpenTable(fd, kv.opt.TableLoadingMode)
 		if err != nil {
 			closeAllTables(tables)
-			return nil, errors.Wrapf(err, "Opening table: %q", fname)
+			return nil, errors.Wrapf(err, "Opening btable: %q", fname)
 		}
 
 		level := tableManifest.Level
@@ -153,7 +153,7 @@ func newLevelsController(kv *DB, mf *Manifest) (*levelsController, error) {
 // Closes the tables, for cleanup in newLevelsController.  (We Close() instead of using DecrRef()
 // because that would delete the underlying files.)  We ignore errors, which is OK because tables
 // are read-only.
-func closeAllTables(tables [][]*table.Table) {
+func closeAllTables(tables [][]*btable.Table) {
 	for _, tableSlice := range tables {
 		for _, table := range tableSlice {
 			_ = table.Close()
@@ -173,18 +173,18 @@ func (s *levelsController) cleanupLevels() error {
 
 // This function picks all tables from all levels, creates a manifest changeset,
 // applies it, and then decrements the refs of these tables, which would result
-// in their deletion. It spares one table from L0, to keep the baggerHead key
+// in their deletion. It spares one btable from L0, to keep the baggerHead key
 // persisted, so we don't lose where we are w.r.t. value log.
 // NOTE: This function in itself isn't sufficient to completely delete all the
 // data. After this, one would still need to iterate over the KV pairs and mark
 // them as deleted.
 func (s *levelsController) deleteLSMTree() (int, error) {
-	var all []*table.Table
-	var keepOne *table.Table
+	var all []*btable.Table
+	var keepOne *btable.Table
 	for _, l := range s.levels {
 		l.RLock()
 		if l.level == 0 && len(l.tables) > 1 {
-			// Skip the last table. We do this to keep the baggerMove key persisted.
+			// Skip the last btable. We do this to keep the baggerMove key persisted.
 			lastIdx := len(l.tables) - 1
 			keepOne = l.tables[lastIdx]
 			all = append(all, l.tables[:lastIdx]...)
@@ -198,11 +198,11 @@ func (s *levelsController) deleteLSMTree() (int, error) {
 	}
 
 	// Generate the manifest changes.
-	changes := []*protos.ManifestChange{}
+	changes := []*bprotos.ManifestChange{}
 	for _, table := range all {
 		changes = append(changes, makeTableDeleteChange(table.ID()))
 	}
-	changeSet := protos.ManifestChangeSet{Changes: changes}
+	changeSet := bprotos.ManifestChangeSet{Changes: changes}
 	if err := s.kv.manifest.addChanges(changeSet.Changes); err != nil {
 		return 0, err
 	}
@@ -211,7 +211,7 @@ func (s *levelsController) deleteLSMTree() (int, error) {
 		l.Lock()
 		l.totalSize = 0
 		if l.level == 0 && len(l.tables) > 1 {
-			l.tables = []*table.Table{keepOne}
+			l.tables = []*btable.Table{keepOne}
 			l.totalSize += keepOne.Size()
 		} else {
 			l.tables = l.tables[:0]
@@ -227,7 +227,7 @@ func (s *levelsController) deleteLSMTree() (int, error) {
 	return len(all), nil
 }
 
-func (s *levelsController) startCompact(lc *y.Closer) {
+func (s *levelsController) startCompact(lc *butils.Closer) {
 	n := s.kv.opt.NumCompactors
 	lc.AddRunning(n - 1)
 	for i := 0; i < n; i++ {
@@ -235,7 +235,7 @@ func (s *levelsController) startCompact(lc *y.Closer) {
 	}
 }
 
-func (s *levelsController) runWorker(lc *y.Closer) {
+func (s *levelsController) runWorker(lc *butils.Closer) {
 	defer lc.Done()
 	if s.kv.opt.DoNotCompact {
 		return
@@ -316,7 +316,7 @@ func (s *levelsController) pickCompactLevels() (prios []compactionPriority) {
 
 // compactBuildTables merge topTables and botTables to form a list of new tables.
 func (s *levelsController) compactBuildTables(
-	l int, cd compactDef) ([]*table.Table, func() error, error) {
+	l int, cd compactDef) ([]*btable.Table, func() error, error) {
 	topTables := cd.top
 	botTables := cd.bot
 
@@ -341,7 +341,7 @@ func (s *levelsController) compactBuildTables(
 	// Try to collect stats so that we can inform value log about GC. That would help us find which
 	// value log file should be GCed.
 	discardStats := make(map[uint32]int64)
-	updateStats := func(vs y.ValueStruct) {
+	updateStats := func(vs butils.ValueStruct) {
 		if vs.Meta&bitValuePointer > 0 {
 			var vp valuePointer
 			vp.Decode(vs.Value)
@@ -350,17 +350,17 @@ func (s *levelsController) compactBuildTables(
 	}
 
 	// Create iterators across all the tables involved first.
-	var iters []y.Iterator
+	var iters []butils.Iterator
 	if l == 0 {
 		iters = appendIteratorsReversed(iters, topTables, false)
 	} else {
-		y.AssertTrue(len(topTables) == 1)
-		iters = []y.Iterator{topTables[0].NewIterator(false)}
+		butils.AssertTrue(len(topTables) == 1)
+		iters = []butils.Iterator{topTables[0].NewIterator(false)}
 	}
 
 	// Next level has level>=1 and we can use ConcatIterator as key ranges do not overlap.
-	iters = append(iters, table.NewConcatIterator(botTables, false))
-	it := y.NewMergeIterator(iters, false)
+	iters = append(iters, btable.NewConcatIterator(botTables, false))
+	it := butils.NewMergeIterator(iters, false)
 	defer it.Close() // Important to close the iterator to do ref counting.
 
 	it.Rewind()
@@ -372,7 +372,7 @@ func (s *levelsController) compactBuildTables(
 
 	// Start generating new tables.
 	type newTableResult struct {
-		table *table.Table
+		table *btable.Table
 		err   error
 	}
 	resultCh := make(chan newTableResult)
@@ -380,12 +380,12 @@ func (s *levelsController) compactBuildTables(
 	var lastKey, skipKey []byte
 	for it.Valid() {
 		timeStart := time.Now()
-		builder := table.NewTableBuilder()
+		builder := btable.NewTableBuilder()
 		var numKeys, numSkips uint64
 		for ; it.Valid(); it.Next() {
 			// See if we need to skip this key.
 			if len(skipKey) > 0 {
-				if y.SameKey(it.Key(), skipKey) {
+				if butils.SameKey(it.Key(), skipKey) {
 					numSkips++
 					updateStats(it.Value())
 					continue
@@ -394,19 +394,19 @@ func (s *levelsController) compactBuildTables(
 				}
 			}
 
-			if !y.SameKey(it.Key(), lastKey) {
+			if !butils.SameKey(it.Key(), lastKey) {
 				if builder.ReachedCapacity(s.kv.opt.MaxTableSize) {
 					// Only break if we are on a different key, and have reached capacity. We want
 					// to ensure that all versions of the key are stored in the same sstable, and
 					// not divided across multiple tables at the same level.
 					break
 				}
-				lastKey = y.SafeCopy(lastKey, it.Key())
+				lastKey = butils.SafeCopy(lastKey, it.Key())
 				numVersions = 0
 			}
 
 			vs := it.Value()
-			version := y.ParseTs(it.Key())
+			version := butils.ParseTs(it.Key())
 			if version <= discardTs {
 				// Keep track of the number of versions encountered for this key. Only consider the
 				// versions which are below the minReadTs, otherwise, we might end up discarding the
@@ -418,7 +418,7 @@ func (s *levelsController) compactBuildTables(
 					lastValidVersion {
 					// If this version of the key is deleted or expired, skip all the rest of the
 					// versions. Ensure that we're only removing versions below readTs.
-					skipKey = y.SafeCopy(skipKey, it.Key())
+					skipKey = butils.SafeCopy(skipKey, it.Key())
 
 					if lastValidVersion {
 						// Add this key. We have set skipKey, so the following key versions
@@ -436,7 +436,7 @@ func (s *levelsController) compactBuildTables(
 				}
 			}
 			numKeys++
-			y.Check(builder.Add(it.Key(), it.Value()))
+			butils.Check(builder.Add(it.Key(), it.Value()))
 		}
 		// It was true that it.Valid() at least once in the loop above, which means we
 		// called Add() at least once, and builder is not Empty().
@@ -445,12 +445,12 @@ func (s *levelsController) compactBuildTables(
 		if !builder.Empty() {
 			numBuilds++
 			fileID := s.reserveFileID()
-			go func(builder *table.Builder) {
+			go func(builder *btable.Builder) {
 				defer builder.Close()
 
-				fd, err := y.CreateSyncedFile(table.NewFilename(fileID, s.kv.opt.Dir), true)
+				fd, err := butils.CreateSyncedFile(btable.NewFilename(fileID, s.kv.opt.Dir), true)
 				if err != nil {
-					resultCh <- newTableResult{nil, errors.Wrapf(err, "While opening new table: %d", fileID)}
+					resultCh <- newTableResult{nil, errors.Wrapf(err, "While opening new btable: %d", fileID)}
 					return
 				}
 
@@ -459,15 +459,15 @@ func (s *levelsController) compactBuildTables(
 					return
 				}
 
-				tbl, err := table.OpenTable(fd, s.kv.opt.TableLoadingMode)
+				tbl, err := btable.OpenTable(fd, s.kv.opt.TableLoadingMode)
 				// decrRef is added below.
-				resultCh <- newTableResult{tbl, errors.Wrapf(err, "Unable to open table: %q", fd.Name())}
+				resultCh <- newTableResult{tbl, errors.Wrapf(err, "Unable to open btable: %q", fd.Name())}
 			}(builder)
 		}
 	}
 
-	newTables := make([]*table.Table, 0, 20)
-	// Wait for all table builders to finish.
+	newTables := make([]*btable.Table, 0, 20)
+	// Wait for all btable builders to finish.
 	var firstErr error
 	for x := 0; x < numBuilds; x++ {
 		res := <-resultCh
@@ -485,7 +485,7 @@ func (s *levelsController) compactBuildTables(
 	}
 
 	if firstErr != nil {
-		// An error happened.  Delete all the newly created table files (by calling DecrRef
+		// An error happened.  Delete all the newly created btable files (by calling DecrRef
 		// -- we're the only holders of a ref).
 		for j := 0; j < numBuilds; j++ {
 			if newTables[j] != nil {
@@ -497,15 +497,15 @@ func (s *levelsController) compactBuildTables(
 	}
 
 	sort.Slice(newTables, func(i, j int) bool {
-		return y.CompareKeys(newTables[i].Biggest(), newTables[j].Biggest()) < 0
+		return butils.CompareKeys(newTables[i].Biggest(), newTables[j].Biggest()) < 0
 	})
 	s.kv.vlog.updateGCStats(discardStats)
 	cd.elog.LazyPrintf("Discard stats: %v", discardStats)
 	return newTables, func() error { return decrRefs(newTables) }, nil
 }
 
-func buildChangeSet(cd *compactDef, newTables []*table.Table) protos.ManifestChangeSet {
-	changes := []*protos.ManifestChange{}
+func buildChangeSet(cd *compactDef, newTables []*btable.Table) bprotos.ManifestChangeSet {
+	changes := []*bprotos.ManifestChange{}
 	for _, table := range newTables {
 		changes = append(changes, makeTableCreateChange(table.ID(), cd.nextLevel.level))
 	}
@@ -515,7 +515,7 @@ func buildChangeSet(cd *compactDef, newTables []*table.Table) protos.ManifestCha
 	for _, table := range cd.bot {
 		changes = append(changes, makeTableDeleteChange(table.ID()))
 	}
-	return protos.ManifestChangeSet{Changes: changes}
+	return bprotos.ManifestChangeSet{Changes: changes}
 }
 
 type compactDef struct {
@@ -524,8 +524,8 @@ type compactDef struct {
 	thisLevel *levelHandler
 	nextLevel *levelHandler
 
-	top []*table.Table
-	bot []*table.Table
+	top []*btable.Table
+	bot []*btable.Table
 
 	thisRange keyRange
 	nextRange keyRange
@@ -547,7 +547,7 @@ func (s *levelsController) fillTablesL0(cd *compactDef) bool {
 	cd.lockLevels()
 	defer cd.unlockLevels()
 
-	cd.top = make([]*table.Table, len(cd.thisLevel.tables))
+	cd.top = make([]*btable.Table, len(cd.thisLevel.tables))
 	copy(cd.top, cd.thisLevel.tables)
 	if len(cd.top) == 0 {
 		return false
@@ -556,7 +556,7 @@ func (s *levelsController) fillTablesL0(cd *compactDef) bool {
 
 	kr := getKeyRange(cd.top)
 	left, right := cd.nextLevel.overlappingTables(levelHandlerRLocked{}, kr)
-	cd.bot = make([]*table.Table, right-left)
+	cd.bot = make([]*btable.Table, right-left)
 	copy(cd.bot, cd.nextLevel.tables[left:right])
 
 	if len(cd.bot) == 0 {
@@ -576,14 +576,14 @@ func (s *levelsController) fillTables(cd *compactDef) bool {
 	cd.lockLevels()
 	defer cd.unlockLevels()
 
-	tbls := make([]*table.Table, len(cd.thisLevel.tables))
+	tbls := make([]*btable.Table, len(cd.thisLevel.tables))
 	copy(tbls, cd.thisLevel.tables)
 	if len(tbls) == 0 {
 		return false
 	}
 
-	// Find the biggest table, and compact that first.
-	// TODO: Try other table picking strategies.
+	// Find the biggest btable, and compact that first.
+	// TODO: Try other btable picking strategies.
 	sort.Slice(tbls, func(i, j int) bool {
 		return tbls[i].Size() > tbls[j].Size()
 	})
@@ -592,21 +592,21 @@ func (s *levelsController) fillTables(cd *compactDef) bool {
 		cd.thisSize = t.Size()
 		cd.thisRange = keyRange{
 			// We pick all the versions of the smallest and the biggest key.
-			left: y.KeyWithTs(y.ParseKey(t.Smallest()), math.MaxUint64),
+			left: butils.KeyWithTs(butils.ParseKey(t.Smallest()), math.MaxUint64),
 			// Note that version zero would be the rightmost key.
-			right: y.KeyWithTs(y.ParseKey(t.Biggest()), 0),
+			right: butils.KeyWithTs(butils.ParseKey(t.Biggest()), 0),
 		}
 		if s.cstatus.overlapsWith(cd.thisLevel.level, cd.thisRange) {
 			continue
 		}
-		cd.top = []*table.Table{t}
+		cd.top = []*btable.Table{t}
 		left, right := cd.nextLevel.overlappingTables(levelHandlerRLocked{}, cd.thisRange)
 
-		cd.bot = make([]*table.Table, right-left)
+		cd.bot = make([]*btable.Table, right-left)
 		copy(cd.bot, cd.nextLevel.tables[left:right])
 
 		if len(cd.bot) == 0 {
-			cd.bot = []*table.Table{}
+			cd.bot = []*btable.Table{}
 			cd.nextRange = cd.thisRange
 			if !s.cstatus.compareAndAdd(thisAndNextLevelRLocked{}, *cd) {
 				continue
@@ -663,17 +663,17 @@ func (s *levelsController) runCompactDef(l int, cd compactDef) (err error) {
 	}
 
 	// Note: For level 0, while doCompact is running, it is possible that new tables are added.
-	// However, the tables are added only to the end, so it is ok to just delete the first table.
+	// However, the tables are added only to the end, so it is ok to just delete the first btable.
 
 	cd.elog.LazyPrintf("LOG Compact %d->%d, del %d tables, add %d tables, took %v\n",
 		l, l+1, len(cd.top)+len(cd.bot), len(newTables), time.Since(timeStart))
 	return nil
 }
 
-// doCompact picks some table on level l and compacts it away to the next level.
+// doCompact picks some btable on level l and compacts it away to the next level.
 func (s *levelsController) doCompact(p compactionPriority) (bool, error) {
 	l := p.level
-	y.AssertTrue(l+1 < s.kv.opt.MaxLevels) // Sanity check.
+	butils.AssertTrue(l+1 < s.kv.opt.MaxLevels) // Sanity check.
 
 	cd := compactDef{
 		elog:      trace.New(fmt.Sprintf("Bagger.L%d", l), "Compact"),
@@ -714,12 +714,12 @@ func (s *levelsController) doCompact(p compactionPriority) (bool, error) {
 	return true, nil
 }
 
-func (s *levelsController) addLevel0Table(t *table.Table) error {
-	// We update the manifest _before_ the table becomes part of a levelHandler, because at that
+func (s *levelsController) addLevel0Table(t *btable.Table) error {
+	// We update the manifest _before_ the btable becomes part of a levelHandler, because at that
 	// point it could get used in some compaction.  This ensures the manifest file gets updated in
 	// the proper order. (That means this update happens before that of some compaction which
-	// deletes the table.)
-	err := s.kv.manifest.addChanges([]*protos.ManifestChange{
+	// deletes the btable.)
+	err := s.kv.manifest.addChanges([]*bprotos.ManifestChange{
 		makeTableCreateChange(t.ID(), 0),
 	})
 	if err != nil {
@@ -753,7 +753,7 @@ func (s *levelsController) addLevel0Table(t *table.Table) error {
 			time.Sleep(10 * time.Millisecond)
 			if i%100 == 0 {
 				prios := s.pickCompactLevels()
-				s.elog.Printf("Waiting to add level 0 table. Compaction priorities: %+v\n", prios)
+				s.elog.Printf("Waiting to add level 0 btable. Compaction priorities: %+v\n", prios)
 				i = 0
 			}
 		}
@@ -772,17 +772,17 @@ func (s *levelsController) close() error {
 }
 
 // get returns the found value if any. If not found, we return nil.
-func (s *levelsController) get(key []byte, maxVs *y.ValueStruct) (y.ValueStruct, error) {
+func (s *levelsController) get(key []byte, maxVs *butils.ValueStruct) (butils.ValueStruct, error) {
 	// It's important that we iterate the levels from 0 on upward.  The reason is, if we iterated
 	// in opposite order, or in parallel (naively calling all the h.RLock() in some order) we could
 	// read level L's tables post-compaction and level L+1's tables pre-compaction.  (If we do
 	// parallelize this, we will need to call the h.RLock() function by increasing order of level
 	// number.)
-	version := y.ParseTs(key)
+	version := butils.ParseTs(key)
 	for _, h := range s.levels {
 		vs, err := h.get(key) // Calls h.RLock() and h.RUnlock().
 		if err != nil {
-			return y.ValueStruct{}, errors.Wrapf(err, "get key: %q", key)
+			return butils.ValueStruct{}, errors.Wrapf(err, "get key: %q", key)
 		}
 		if vs.Value == nil && vs.Meta == 0 {
 			continue
@@ -797,21 +797,21 @@ func (s *levelsController) get(key []byte, maxVs *y.ValueStruct) (y.ValueStruct,
 	if maxVs != nil {
 		return *maxVs, nil
 	}
-	return y.ValueStruct{}, nil
+	return butils.ValueStruct{}, nil
 }
 
-func appendIteratorsReversed(out []y.Iterator, th []*table.Table, reversed bool) []y.Iterator {
+func appendIteratorsReversed(out []butils.Iterator, th []*btable.Table, reversed bool) []butils.Iterator {
 	for i := len(th) - 1; i >= 0; i-- {
-		// This will increment the reference of the table handler.
+		// This will increment the reference of the btable handler.
 		out = append(out, th[i].NewIterator(reversed))
 	}
 	return out
 }
 
 // appendIterators appends iterators to an array of iterators, for merging.
-// Note: This obtains references for the table handlers. Remember to close these iterators.
+// Note: This obtains references for the btable handlers. Remember to close these iterators.
 func (s *levelsController) appendIterators(
-	iters []y.Iterator, reversed bool) []y.Iterator {
+	iters []butils.Iterator, reversed bool) []butils.Iterator {
 	// Just like with get, it's important we iterate the levels from 0 on upward, to avoid missing
 	// data when there's a compaction.
 	for _, level := range s.levels {

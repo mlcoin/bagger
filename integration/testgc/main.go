@@ -13,8 +13,8 @@ import (
 	"time"
 
 	"github.com/bigbagger/bagger"
-	"github.com/bigbagger/bagger/options"
-	"github.com/bigbagger/bagger/y"
+	"github.com/bigbagger/bagger/boptions"
+	"github.com/bigbagger/bagger/butils"
 )
 
 var Max int64 = 10000000
@@ -76,7 +76,7 @@ func (s *S) read(db *bagger.DB) error {
 		if err != nil {
 			return err
 		}
-		y.AssertTruef(len(val) == len(suffix)+8, "Found val of len: %d\n", len(val))
+		butils.AssertTruef(len(val) == len(suffix)+8, "Found val of len: %d\n", len(val))
 		vali := binary.BigEndian.Uint64(val[0:8])
 		s.Lock()
 		expected := s.vals[keyi]
@@ -110,8 +110,8 @@ func main() {
 	opts := bagger.DefaultOptions
 	opts.Dir = dir
 	opts.ValueDir = dir
-	opts.TableLoadingMode = options.MemoryMap
-	opts.ValueLogLoadingMode = options.FileIO
+	opts.TableLoadingMode = boptions.MemoryMap
+	opts.ValueLogLoadingMode = boptions.FileIO
 	// opts.ValueLogFileSize = 64 << 20 // 64 MB.
 	opts.SyncWrites = false
 
@@ -123,7 +123,7 @@ func main() {
 
 	go http.ListenAndServe("localhost:8080", nil)
 
-	closer := y.NewCloser(11)
+	closer := butils.NewCloser(11)
 	go func() {
 		// Run value log GC.
 		defer closer.Done()

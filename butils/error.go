@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-package y
+package butils
 
 // This file contains some functions for error handling. Note that we are moving
 // towards using x.Trace, i.e., rpc tracing using net/tracer. But for now, these

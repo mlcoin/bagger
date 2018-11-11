@@ -1,12 +1,12 @@
 /*
  * Copyright 2018-Present Alexander Shvid and Contributors
- * Copyright (C) 2017 Dgraph Labs, Inc. and Contributors
+ * Copyright 2017 Dgraph Labs, Inc. and Contributors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *    http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -15,15 +15,17 @@
  * limitations under the License.
  */
 
-// Use protos/gen.sh to generate .pb.go files.
-syntax = "proto3";
+package boptions
 
-package protos;
+// FileLoadingMode specifies how data in LSM btable files and value log files should
+// be loaded.
+type FileLoadingMode int
 
-message KVPair {
-        bytes key = 1;
-        bytes value = 2;
-        bytes  userMeta = 3;
-        uint64 version = 4;
-        uint64 expires_at = 5;
-}
+const (
+	// FileIO indicates that files must be loaded using standard I/O
+	FileIO FileLoadingMode = iota
+	// LoadToRAM indicates that file must be loaded into RAM
+	LoadToRAM
+	// MemoryMap indicates that that the file must be memory-mapped
+	MemoryMap
+)

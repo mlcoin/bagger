@@ -29,10 +29,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/bigbagger/bagger/options"
-	"github.com/bigbagger/bagger/skl"
-	"github.com/bigbagger/bagger/table"
-	"github.com/bigbagger/bagger/y"
+	"github.com/bigbagger/bagger/boptions"
+	"github.com/bigbagger/bagger/bskiplist"
+	"github.com/bigbagger/bagger/btable"
+	"github.com/bigbagger/bagger/butils"
 	"github.com/pkg/errors"
 	"golang.org/x/net/trace"
 )
@@ -45,11 +45,11 @@ var (
 )
 
 type closers struct {
-	updateSize *y.Closer
-	compactors *y.Closer
-	memtable   *y.Closer
-	writes     *y.Closer
-	valueGC    *y.Closer
+	updateSize *butils.Closer
+	compactors *butils.Closer
+	memtable   *butils.Closer
+	writes     *butils.Closer
+	valueGC    *butils.Closer
 }
 
 // DB provides the various functions required to interact with Bagger.
@@ -63,8 +63,8 @@ type DB struct {
 
 	closers   closers
 	elog      trace.EventLog
-	mt        *skl.Skiplist   // Our latest (actively written) in-memory table
-	imm       []*skl.Skiplist // Add here only AFTER pushing to flushChan.
+	mt        *bskiplist.Skiplist   // Our latest (actively written) in-memory btable
+	imm       []*bskiplist.Skiplist // Add here only AFTER pushing to flushChan.
 	opt       Options
 	manifest  *manifestFile
 	lc        *levelsController
@@ -85,13 +85,13 @@ const (
 func (out *DB) replayFunction() func(Entry, valuePointer) error {
 	type txnEntry struct {
 		nk []byte
-		v  y.ValueStruct
+		v  butils.ValueStruct
 	}
 
 	var txn []txnEntry
 	var lastCommit uint64
 
-	toLSM := func(nk []byte, vs y.ValueStruct) {
+	toLSM := func(nk []byte, vs butils.ValueStruct) {
 		for err := out.ensureRoomForWrite(); err != nil; err = out.ensureRoomForWrite() {
 			out.elog.Printf("Replay: Making room for writes")
 			time.Sleep(10 * time.Millisecond)
@@ -106,8 +106,8 @@ func (out *DB) replayFunction() func(Entry, valuePointer) error {
 		}
 		first = false
 
-		if out.orc.nextTxnTs < y.ParseTs(e.Key) {
-			out.orc.nextTxnTs = y.ParseTs(e.Key)
+		if out.orc.nextTxnTs < butils.ParseTs(e.Key) {
+			out.orc.nextTxnTs = butils.ParseTs(e.Key)
 		}
 
 		nk := make([]byte, len(e.Key))
@@ -123,7 +123,7 @@ func (out *DB) replayFunction() func(Entry, valuePointer) error {
 			meta = meta | bitValuePointer
 		}
 
-		v := y.ValueStruct{
+		v := butils.ValueStruct{
 			Value:    nv,
 			Meta:     meta,
 			UserMeta: e.UserMeta,
@@ -134,8 +134,8 @@ func (out *DB) replayFunction() func(Entry, valuePointer) error {
 			if err != nil {
 				return errors.Wrapf(err, "Unable to parse txn fin: %q", e.Value)
 			}
-			y.AssertTrue(lastCommit == txnTs)
-			y.AssertTrue(len(txn) > 0)
+			butils.AssertTrue(lastCommit == txnTs)
+			butils.AssertTrue(len(txn) > 0)
 			// Got the end of txn. Now we can store them.
 			for _, t := range txn {
 				toLSM(t.nk, t.v)
@@ -144,7 +144,7 @@ func (out *DB) replayFunction() func(Entry, valuePointer) error {
 			lastCommit = 0
 
 		} else if e.meta&bitTxn > 0 {
-			txnTs := y.ParseTs(nk)
+			txnTs := butils.ParseTs(nk)
 			if lastCommit == 0 {
 				lastCommit = txnTs
 			}
@@ -161,8 +161,8 @@ func (out *DB) replayFunction() func(Entry, valuePointer) error {
 			toLSM(nk, v)
 
 			// We shouldn't get this entry in the middle of a transaction.
-			y.AssertTrue(lastCommit == 0)
-			y.AssertTrue(len(txn) == 0)
+			butils.AssertTrue(lastCommit == 0)
+			butils.AssertTrue(len(txn) == 0)
 		}
 		return nil
 	}
@@ -171,7 +171,7 @@ func (out *DB) replayFunction() func(Entry, valuePointer) error {
 // Open returns a new DB object.
 func Open(opt Options) (db *DB, err error) {
 	opt.maxBatchSize = (15 * opt.MaxTableSize) / 100
-	opt.maxBatchCount = opt.maxBatchSize / int64(skl.MaxNodeSize)
+	opt.maxBatchCount = opt.maxBatchSize / int64(bskiplist.MaxNodeSize)
 
 	if opt.ValueThreshold > math.MaxUint16-16 {
 		return nil, ErrValueThreshold
@@ -185,16 +185,16 @@ func Open(opt Options) (db *DB, err error) {
 	for _, path := range []string{opt.Dir, opt.ValueDir} {
 		dirExists, err := exists(path)
 		if err != nil {
-			return nil, y.Wrapf(err, "Invalid Dir: %q", path)
+			return nil, butils.Wrapf(err, "Invalid Dir: %q", path)
 		}
 		if !dirExists {
 			if opt.ReadOnly {
-				return nil, y.Wrapf(err, "Cannot find Dir for read-only open: %q", path)
+				return nil, butils.Wrapf(err, "Cannot find Dir for read-only open: %q", path)
 			}
 			// Try to create the directory
 			err = os.Mkdir(path, 0700)
 			if err != nil {
-				return nil, y.Wrapf(err, "Error Creating Dir: %q", path)
+				return nil, butils.Wrapf(err, "Error Creating Dir: %q", path)
 			}
 		}
 	}
@@ -230,8 +230,8 @@ func Open(opt Options) (db *DB, err error) {
 	if !(opt.ValueLogFileSize <= 2<<30 && opt.ValueLogFileSize >= 1<<20) {
 		return nil, ErrValueLogSize
 	}
-	if !(opt.ValueLogLoadingMode == options.FileIO ||
-		opt.ValueLogLoadingMode == options.MemoryMap) {
+	if !(opt.ValueLogLoadingMode == boptions.FileIO ||
+		opt.ValueLogLoadingMode == boptions.MemoryMap) {
 		return nil, ErrInvalidLoadingMode
 	}
 	manifestFile, manifest, err := openOrCreateManifestFile(opt.Dir, opt.ReadOnly)
@@ -245,7 +245,7 @@ func Open(opt Options) (db *DB, err error) {
 	}()
 
 	db = &DB{
-		imm:           make([]*skl.Skiplist, 0, opt.NumMemtables),
+		imm:           make([]*bskiplist.Skiplist, 0, opt.NumMemtables),
 		flushChan:     make(chan flushTask, opt.NumMemtables),
 		writeCh:       make(chan *request, kvWriteChCapacity),
 		opt:           opt,
@@ -258,9 +258,9 @@ func Open(opt Options) (db *DB, err error) {
 
 	// Calculate initial size.
 	db.calculateSize()
-	db.closers.updateSize = y.NewCloser(1)
+	db.closers.updateSize = butils.NewCloser(1)
 	go db.updateSize(db.closers.updateSize)
-	db.mt = skl.NewSkiplist(arenaSize(opt))
+	db.mt = bskiplist.NewSkiplist(arenaSize(opt))
 
 	// newLevelsController potentially loads files in directory.
 	if db.lc, err = newLevelsController(db, &manifest); err != nil {
@@ -268,14 +268,14 @@ func Open(opt Options) (db *DB, err error) {
 	}
 
 	if !opt.ReadOnly {
-		db.closers.compactors = y.NewCloser(1)
+		db.closers.compactors = butils.NewCloser(1)
 		db.lc.startCompact(db.closers.compactors)
 
-		db.closers.memtable = y.NewCloser(1)
+		db.closers.memtable = butils.NewCloser(1)
 		go db.flushMemtable(db.closers.memtable) // Need levels controller to be up.
 	}
 
-	headKey := y.KeyWithTs(head, math.MaxUint64)
+	headKey := butils.KeyWithTs(head, math.MaxUint64)
 	// Need to pass with timestamp, lsm get removes the last 8 bytes and compares key
 	vs, err := db.get(headKey)
 	if err != nil {
@@ -287,7 +287,7 @@ func Open(opt Options) (db *DB, err error) {
 		vptr.Decode(vs.Value)
 	}
 
-	replayCloser := y.NewCloser(1)
+	replayCloser := butils.NewCloser(1)
 	go db.doWrites(replayCloser)
 
 	if err = db.vlog.open(db, vptr, db.replayFunction()); err != nil {
@@ -301,10 +301,10 @@ func Open(opt Options) (db *DB, err error) {
 	db.orc.nextTxnTs++
 
 	db.writeCh = make(chan *request, kvWriteChCapacity)
-	db.closers.writes = y.NewCloser(1)
+	db.closers.writes = butils.NewCloser(1)
 	go db.doWrites(db.closers.writes)
 
-	db.closers.valueGC = y.NewCloser(1)
+	db.closers.valueGC = butils.NewCloser(1)
 	go db.vlog.waitOnGC(db.closers.valueGC)
 
 	valueDirLockGuard = nil
@@ -340,7 +340,7 @@ func (db *DB) Close() (err error) {
 			pushedFlushTask := func() bool {
 				db.Lock()
 				defer db.Unlock()
-				y.AssertTrue(db.mt != nil)
+				butils.AssertTrue(db.mt != nil)
 				select {
 				case db.flushChan <- flushTask{db.mt, db.vptr}:
 					db.imm = append(db.imm, db.mt) // Flusher will attempt to remove this from s.imm.
@@ -444,11 +444,11 @@ func syncDir(dir string) error {
 }
 
 // getMemtables returns the current memtables and get references.
-func (db *DB) getMemTables() ([]*skl.Skiplist, func()) {
+func (db *DB) getMemTables() ([]*bskiplist.Skiplist, func()) {
 	db.RLock()
 	defer db.RUnlock()
 
-	tables := make([]*skl.Skiplist, len(db.imm)+1)
+	tables := make([]*bskiplist.Skiplist, len(db.imm)+1)
 
 	// Get mutable memtable.
 	tables[0] = db.mt
@@ -473,8 +473,8 @@ func (db *DB) getMemTables() ([]*skl.Skiplist, func()) {
 // IMPORTANT: We should never write an entry with an older timestamp for the same key, We need to
 // maintain this invariant to search for the latest value of a key, or else we need to search in all
 // tables and find the max version among them.  To maintain this invariant, we also need to ensure
-// that all versions of a key are always present in the same table from level 1, because compaction
-// can push any table down.
+// that all versions of a key are always present in the same btable from level 1, because compaction
+// can push any btable down.
 //
 // Update (Sep 22, 2018): To maintain the above invariant, and to allow keys to be moved from one
 // value log to another (while reclaiming space during value log GC), we have logically moved this
@@ -483,24 +483,24 @@ func (db *DB) getMemTables() ([]*skl.Skiplist, func()) {
 // we will ALWAYS skip versions with ts greater than the key version).  However, if that key has
 // been moved, then for the corresponding movekey, we'll look through all the levels of the tree
 // to ensure that we pick the highest version of the movekey present.
-func (db *DB) get(key []byte) (y.ValueStruct, error) {
+func (db *DB) get(key []byte) (butils.ValueStruct, error) {
 	tables, decr := db.getMemTables() // Lock should be released.
 	defer decr()
 
-	var maxVs *y.ValueStruct
+	var maxVs *butils.ValueStruct
 	var version uint64
 	if bytes.HasPrefix(key, baggerMove) {
 		// If we are checking baggerMove key, we should look into all the
 		// levels, so we can pick up the newer versions, which might have been
 		// compacted down the tree.
-		maxVs = &y.ValueStruct{}
-		version = y.ParseTs(key)
+		maxVs = &butils.ValueStruct{}
+		version = butils.ParseTs(key)
 	}
 
-	y.NumGets.Add(1)
+	butils.NumGets.Add(1)
 	for i := 0; i < len(tables); i++ {
 		vs := tables[i].Get(key)
-		y.NumMemtableGets.Add(1)
+		butils.NumMemtableGets.Add(1)
 		if vs.Meta == 0 && vs.Value == nil {
 			continue
 		}
@@ -531,7 +531,7 @@ func (db *DB) updateOffset(ptrs []valuePointer) {
 
 	db.Lock()
 	defer db.Unlock()
-	y.AssertTrue(!ptr.Less(db.vptr))
+	butils.AssertTrue(!ptr.Less(db.vptr))
 	db.vptr = ptr
 }
 
@@ -556,7 +556,7 @@ func (db *DB) writeToLSM(b *request) error {
 		}
 		if db.shouldWriteValueToLSM(*entry) { // Will include deletion / tombstone case.
 			db.mt.Put(entry.Key,
-				y.ValueStruct{
+				butils.ValueStruct{
 					Value:     entry.Value,
 					Meta:      entry.meta,
 					UserMeta:  entry.UserMeta,
@@ -565,7 +565,7 @@ func (db *DB) writeToLSM(b *request) error {
 		} else {
 			var offsetBuf [vptrSize]byte
 			db.mt.Put(entry.Key,
-				y.ValueStruct{
+				butils.ValueStruct{
 					Value:     b.Ptrs[i].Encode(offsetBuf[:]),
 					Meta:      entry.meta | bitValuePointer,
 					UserMeta:  entry.UserMeta,
@@ -650,12 +650,12 @@ func (db *DB) sendToWriteCh(entries []*Entry) (*request, error) {
 	req.Wg = sync.WaitGroup{}
 	req.Wg.Add(1)
 	db.writeCh <- req // Handled in doWrites.
-	y.NumPuts.Add(int64(len(entries)))
+	butils.NumPuts.Add(int64(len(entries)))
 
 	return req, nil
 }
 
-func (db *DB) doWrites(lc *y.Closer) {
+func (db *DB) doWrites(lc *butils.Closer) {
 	defer lc.Done()
 	pendingCh := make(chan struct{}, 1)
 
@@ -668,7 +668,7 @@ func (db *DB) doWrites(lc *y.Closer) {
 
 	// This variable tracks the number of pending writes.
 	reqLen := new(expvar.Int)
-	y.PendingWrites.Set(db.opt.Dir, reqLen)
+	butils.PendingWrites.Set(db.opt.Dir, reqLen)
 
 	reqs := make([]*request, 0, 10)
 	for {
@@ -757,7 +757,7 @@ func (db *DB) ensureRoomForWrite() error {
 		return nil
 	}
 
-	y.AssertTrue(db.mt != nil) // A nil mt indicates that DB is being closed.
+	butils.AssertTrue(db.mt != nil) // A nil mt indicates that DB is being closed.
 	select {
 	case db.flushChan <- flushTask{db.mt, db.vptr}:
 		db.elog.Printf("Flushing value log to disk if async mode.")
@@ -771,7 +771,7 @@ func (db *DB) ensureRoomForWrite() error {
 			db.mt.MemSize(), len(db.flushChan))
 		// We manage to push this task. Let's modify imm.
 		db.imm = append(db.imm, db.mt)
-		db.mt = skl.NewSkiplist(arenaSize(db.opt))
+		db.mt = bskiplist.NewSkiplist(arenaSize(db.opt))
 		// New memtable is empty. We certainly have room.
 		return nil
 	default:
@@ -781,14 +781,14 @@ func (db *DB) ensureRoomForWrite() error {
 }
 
 func arenaSize(opt Options) int64 {
-	return opt.MaxTableSize + opt.maxBatchSize + opt.maxBatchCount*int64(skl.MaxNodeSize)
+	return opt.MaxTableSize + opt.maxBatchSize + opt.maxBatchCount*int64(bskiplist.MaxNodeSize)
 }
 
 // WriteLevel0Table flushes memtable.
-func writeLevel0Table(s *skl.Skiplist, f *os.File) error {
+func writeLevel0Table(s *bskiplist.Skiplist, f *os.File) error {
 	iter := s.NewIterator()
 	defer iter.Close()
-	b := table.NewTableBuilder()
+	b := btable.NewTableBuilder()
 	defer b.Close()
 	for iter.SeekToFirst(); iter.Valid(); iter.Next() {
 		if err := b.Add(iter.Key(), iter.Value()); err != nil {
@@ -800,7 +800,7 @@ func writeLevel0Table(s *skl.Skiplist, f *os.File) error {
 }
 
 type flushTask struct {
-	mt   *skl.Skiplist
+	mt   *bskiplist.Skiplist
 	vptr valuePointer
 }
 
@@ -814,14 +814,14 @@ func (db *DB) handleFlushTask(ft flushTask) error {
 
 		// Pick the max commit ts, so in case of crash, our read ts would be higher than all the
 		// commits.
-		headTs := y.KeyWithTs(head, db.orc.nextTs())
-		ft.mt.Put(headTs, y.ValueStruct{Value: offset})
+		headTs := butils.KeyWithTs(head, db.orc.nextTs())
+		ft.mt.Put(headTs, butils.ValueStruct{Value: offset})
 	}
 
 	fileID := db.lc.reserveFileID()
-	fd, err := y.CreateSyncedFile(table.NewFilename(fileID, db.opt.Dir), true)
+	fd, err := butils.CreateSyncedFile(btable.NewFilename(fileID, db.opt.Dir), true)
 	if err != nil {
-		return y.Wrap(err)
+		return butils.Wrap(err)
 	}
 
 	// Don't block just to sync the directory entry.
@@ -840,9 +840,9 @@ func (db *DB) handleFlushTask(ft flushTask) error {
 		db.elog.Errorf("ERROR while syncing level directory: %v", dirSyncErr)
 	}
 
-	tbl, err := table.OpenTable(fd, db.opt.TableLoadingMode)
+	tbl, err := btable.OpenTable(fd, db.opt.TableLoadingMode)
 	if err != nil {
-		db.elog.Printf("ERROR while opening table: %v", err)
+		db.elog.Printf("ERROR while opening btable: %v", err)
 		return err
 	}
 	// We own a ref on tbl.
@@ -860,7 +860,7 @@ func (db *DB) handleFlushTask(ft flushTask) error {
 	// which would arrive here would match db.imm[0], because we acquire a
 	// lock over DB when pushing to flushChan.
 	// TODO: This logic is dirty AF. Any change and this could easily break.
-	y.AssertTrue(ft.mt == db.imm[0])
+	butils.AssertTrue(ft.mt == db.imm[0])
 	db.imm = db.imm[1:]
 	ft.mt.DecrRef() // Return memory.
 	return nil
@@ -868,7 +868,7 @@ func (db *DB) handleFlushTask(ft flushTask) error {
 
 // flushMemtable must keep running until we send it an empty flushTask. If there
 // are errors during handling the flush task, we'll retry indefinitely.
-func (db *DB) flushMemtable(lc *y.Closer) error {
+func (db *DB) flushMemtable(lc *butils.Closer) error {
 	defer lc.Done()
 
 	for ft := range db.flushChan {
@@ -900,7 +900,7 @@ func exists(path string) (bool, error) {
 }
 
 // This function does a filewalk, calculates the size of vlog and sst files and stores it in
-// y.LSMSize and y.VlogSize.
+// butils.LSMSize and butils.VlogSize.
 func (db *DB) calculateSize() {
 	newInt := func(val int64) *expvar.Int {
 		v := new(expvar.Int)
@@ -929,15 +929,15 @@ func (db *DB) calculateSize() {
 	}
 
 	lsmSize, vlogSize := totalSize(db.opt.Dir)
-	y.LSMSize.Set(db.opt.Dir, newInt(lsmSize))
+	butils.LSMSize.Set(db.opt.Dir, newInt(lsmSize))
 	// If valueDir is different from dir, we'd have to do another walk.
 	if db.opt.ValueDir != db.opt.Dir {
 		_, vlogSize = totalSize(db.opt.ValueDir)
 	}
-	y.VlogSize.Set(db.opt.Dir, newInt(vlogSize))
+	butils.VlogSize.Set(db.opt.Dir, newInt(vlogSize))
 }
 
-func (db *DB) updateSize(lc *y.Closer) {
+func (db *DB) updateSize(lc *butils.Closer) {
 	defer lc.Done()
 
 	metricsTicker := time.NewTicker(time.Minute)
@@ -986,7 +986,7 @@ func (db *DB) RunValueLogGC(discardRatio float64) error {
 	}
 
 	// Find head on disk
-	headKey := y.KeyWithTs(head, math.MaxUint64)
+	headKey := butils.KeyWithTs(head, math.MaxUint64)
 	// Need to pass with timestamp, lsm get removes the last 8 bytes and compares key
 	val, err := db.lc.get(headKey, nil)
 	if err != nil {
@@ -1005,12 +1005,12 @@ func (db *DB) RunValueLogGC(discardRatio float64) error {
 // Size returns the size of lsm and value log files in bytes. It can be used to decide how often to
 // call RunValueLogGC.
 func (db *DB) Size() (lsm int64, vlog int64) {
-	if y.LSMSize.Get(db.opt.Dir) == nil {
+	if butils.LSMSize.Get(db.opt.Dir) == nil {
 		lsm, vlog = 0, 0
 		return
 	}
-	lsm = y.LSMSize.Get(db.opt.Dir).(*expvar.Int).Value()
-	vlog = y.VlogSize.Get(db.opt.Dir).(*expvar.Int).Value()
+	lsm = butils.LSMSize.Get(db.opt.Dir).(*expvar.Int).Value()
+	vlog = butils.VlogSize.Get(db.opt.Dir).(*expvar.Int).Value()
 	return
 }
 
@@ -1134,7 +1134,7 @@ type MergeOperator struct {
 	f      MergeFunc
 	db     *DB
 	key    []byte
-	closer *y.Closer
+	closer *butils.Closer
 }
 
 // MergeFunc accepts two byte slices, one representing an existing value, and
@@ -1155,7 +1155,7 @@ func (db *DB) GetMergeOperator(key []byte,
 		f:      f,
 		db:     db,
 		key:    key,
-		closer: y.NewCloser(1),
+		closer: butils.NewCloser(1),
 	}
 
 	go op.runCompactions(dur)

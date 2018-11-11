@@ -27,8 +27,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bigbagger/bagger/options"
-	"github.com/bigbagger/bagger/y"
+	"github.com/bigbagger/bagger/boptions"
+	"github.com/bigbagger/bagger/butils"
 
 	"github.com/stretchr/testify/require"
 )
@@ -99,7 +99,7 @@ func TestTxnCommitAsync(t *testing.T) {
 		require.NoError(t, txn.Commit())
 		txn.Discard()
 
-		closer := y.NewCloser(1)
+		closer := butils.NewCloser(1)
 		go func() {
 			defer closer.Done()
 			for {
@@ -259,7 +259,7 @@ func TestTxnWriteSkew(t *testing.T) {
 	runBaggerTest(t, nil, func(t *testing.T, db *DB) {
 		// Accounts
 		ax := []byte("x")
-		ay := []byte("y")
+		ay := []byte("butils")
 
 		// Set balance to $100 in each account.
 		txn := db.NewTransaction(true)
@@ -632,7 +632,7 @@ func TestIteratorAllVersionsWithDeleted(t *testing.T) {
 			require.NoError(t, err)
 			err = txn.db.batchSet([]*Entry{
 				{
-					Key:  y.KeyWithTs(item.key, item.version),
+					Key:  butils.KeyWithTs(item.key, item.version),
 					meta: bitDelete,
 				},
 			})
@@ -807,7 +807,7 @@ func TestArmV7Issue311Fix(t *testing.T) {
 	defer os.RemoveAll(dir)
 
 	config := DefaultOptions
-	config.TableLoadingMode = options.MemoryMap
+	config.TableLoadingMode = boptions.MemoryMap
 	config.ValueLogFileSize = 16 << 20
 	config.LevelOneSize = 8 << 20
 	config.MaxTableSize = 2 << 20

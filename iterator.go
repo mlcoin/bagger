@@ -25,9 +25,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/bigbagger/bagger/options"
+	"github.com/bigbagger/bagger/boptions"
 
-	"github.com/bigbagger/bagger/y"
+	"github.com/bigbagger/bagger/butils"
 )
 
 type prefetchStatus uint8
@@ -49,7 +49,7 @@ type Item struct {
 	userMeta  byte
 	expiresAt uint64
 	val       []byte
-	slice     *y.Slice // Used only during prefetching.
+	slice     *butils.Slice // Used only during prefetching.
 	next      *Item
 	version   uint64
 	txn       *Txn
@@ -78,7 +78,7 @@ func (item *Item) Key() []byte {
 // If nil is passed, or capacity of dst isn't sufficient, a new slice would be allocated and
 // returned.
 func (item *Item) KeyCopy(dst []byte) []byte {
-	return y.SafeCopy(dst, item.key)
+	return butils.SafeCopy(dst, item.key)
 }
 
 // Version returns the commit timestamp of the item.
@@ -124,11 +124,11 @@ func (item *Item) Value(fn func(val []byte) error) error {
 func (item *Item) ValueCopy(dst []byte) ([]byte, error) {
 	item.wg.Wait()
 	if item.status == prefetched {
-		return y.SafeCopy(dst, item.val), item.err
+		return butils.SafeCopy(dst, item.val), item.err
 	}
 	buf, cb, err := item.yieldItemValue()
 	defer runCallback(cb)
-	return y.SafeCopy(dst, buf), err
+	return butils.SafeCopy(dst, buf), err
 }
 
 func (item *Item) hasValue() bool {
@@ -156,7 +156,7 @@ func (item *Item) yieldItemValue() ([]byte, func(), error) {
 		}
 
 		if item.slice == nil {
-			item.slice = new(y.Slice)
+			item.slice = new(butils.Slice)
 		}
 
 		if (item.meta & bitValuePointer) == 0 {
@@ -183,7 +183,7 @@ func (item *Item) yieldItemValue() ([]byte, func(), error) {
 		runCallback(cb)
 		// Do not put baggerMove on the left in append. It seems to cause some sort of manipulation.
 		key = append([]byte{}, baggerMove...)
-		key = append(key, y.KeyWithTs(item.Key(), item.Version())...)
+		key = append(key, butils.KeyWithTs(item.Key(), item.Version())...)
 		// Note that we can't set item.key to move key, because that would
 		// change the key user sees before and after this call. Also, this move
 		// logic is internal logic and should not impact the external behavior
@@ -197,7 +197,7 @@ func (item *Item) yieldItemValue() ([]byte, func(), error) {
 		}
 		// Bug fix: Always copy the vs.Value into vptr here. Otherwise, when item is reused this
 		// slice gets overwritten.
-		item.vptr = y.SafeCopy(item.vptr, vs.Value)
+		item.vptr = butils.SafeCopy(item.vptr, vs.Value)
 		item.meta &^= bitValuePointer // Clear the value pointer bit.
 		if vs.Meta&bitValuePointer > 0 {
 			item.meta |= bitValuePointer // This meta would only be about value pointer.
@@ -220,7 +220,7 @@ func (item *Item) prefetchValue() {
 	if val == nil {
 		return
 	}
-	if item.db.opt.ValueLogLoadingMode == options.MemoryMap {
+	if item.db.opt.ValueLogLoadingMode == boptions.MemoryMap {
 		buf := item.slice.Resize(len(val))
 		copy(buf, val)
 		item.val = buf
@@ -308,10 +308,10 @@ func (l *list) pop() *Item {
 	return i
 }
 
-// IteratorOptions is used to set options when iterating over Bagger key-value
+// IteratorOptions is used to set boptions when iterating over Bagger key-value
 // stores.
 //
-// This package provides DefaultIteratorOptions which contains options that
+// This package provides DefaultIteratorOptions which contains boptions that
 // should work for most applications. Consider using that as a starting point
 // before customizing it for your own needs.
 type IteratorOptions struct {
@@ -325,7 +325,7 @@ type IteratorOptions struct {
 	internalAccess bool // Used to allow internal access to bagger keys.
 }
 
-// DefaultIteratorOptions contains default options when iterating over Bagger key-value stores.
+// DefaultIteratorOptions contains default boptions when iterating over Bagger key-value stores.
 var DefaultIteratorOptions = IteratorOptions{
 	PrefetchValues: true,
 	PrefetchSize:   100,
@@ -335,7 +335,7 @@ var DefaultIteratorOptions = IteratorOptions{
 
 // Iterator helps iterating over the KV pairs in a lexicographically sorted order.
 type Iterator struct {
-	iitr   *y.MergeIterator
+	iitr   *butils.MergeIterator
 	txn    *Txn
 	readTs uint64
 
@@ -349,7 +349,7 @@ type Iterator struct {
 	closed bool
 }
 
-// NewIterator returns a new iterator. Depending upon the options, either only keys, or both
+// NewIterator returns a new iterator. Depending upon the boptions, either only keys, or both
 // key-value pairs would be fetched. The keys are returned in lexicographically sorted order.
 // Using prefetch is recommended if you're doing a long running iteration, for performance.
 //
@@ -369,7 +369,7 @@ func (txn *Txn) NewIterator(opt IteratorOptions) *Iterator {
 	tables, decr := txn.db.getMemTables()
 	defer decr()
 	txn.db.vlog.incrIteratorCount()
-	var iters []y.Iterator
+	var iters []butils.Iterator
 	if itr := txn.newPendingWritesIterator(opt.Reverse); itr != nil {
 		iters = append(iters, itr)
 	}
@@ -379,7 +379,7 @@ func (txn *Txn) NewIterator(opt IteratorOptions) *Iterator {
 	iters = txn.db.lc.appendIterators(iters, opt.Reverse) // This will increment references.
 	res := &Iterator{
 		txn:    txn,
-		iitr:   y.NewMergeIterator(iters, opt.Reverse),
+		iitr:   butils.NewMergeIterator(iters, opt.Reverse),
 		opt:    opt,
 		readTs: txn.readTs,
 	}
@@ -389,7 +389,7 @@ func (txn *Txn) NewIterator(opt IteratorOptions) *Iterator {
 func (it *Iterator) newItem() *Item {
 	item := it.waste.pop()
 	if item == nil {
-		item = &Item{slice: new(y.Slice), db: it.txn.db, txn: it.txn}
+		item = &Item{slice: new(butils.Slice), db: it.txn.db, txn: it.txn}
 	}
 	return item
 }
@@ -490,7 +490,7 @@ func (it *Iterator) parseItem() bool {
 	}
 
 	// Skip any versions which are beyond the readTs.
-	version := y.ParseTs(key)
+	version := butils.ParseTs(key)
 	if version > it.readTs {
 		mi.Next()
 		return false
@@ -509,7 +509,7 @@ func (it *Iterator) parseItem() bool {
 	// If iterating in forward direction, then just checking the last key against current key would
 	// be sufficient.
 	if !it.opt.Reverse {
-		if y.SameKey(it.lastKey, key) {
+		if butils.SameKey(it.lastKey, key) {
 			mi.Next()
 			return false
 		}
@@ -518,7 +518,7 @@ func (it *Iterator) parseItem() bool {
 		// Consider keys: a 5, b 7 (del), b 5. When iterating, lastKey = a.
 		// Then we see b 7, which is deleted. If we don't store lastKey = b, we'll then return b 5,
 		// which is wrong. Therefore, update lastKey here.
-		it.lastKey = y.SafeCopy(it.lastKey, mi.Key())
+		it.lastKey = butils.SafeCopy(it.lastKey, mi.Key())
 	}
 
 FILL:
@@ -541,8 +541,8 @@ FILL:
 	}
 
 	// Reverse direction.
-	nextTs := y.ParseTs(mi.Key())
-	mik := y.ParseKey(mi.Key())
+	nextTs := butils.ParseTs(mi.Key())
+	mik := butils.ParseKey(mi.Key())
 	if nextTs <= it.readTs && bytes.Equal(mik, item.key) {
 		// This is a valid potential candidate.
 		goto FILL
@@ -558,10 +558,10 @@ func (it *Iterator) fill(item *Item) {
 	item.userMeta = vs.UserMeta
 	item.expiresAt = vs.ExpiresAt
 
-	item.version = y.ParseTs(it.iitr.Key())
-	item.key = y.SafeCopy(item.key, y.ParseKey(it.iitr.Key()))
+	item.version = butils.ParseTs(it.iitr.Key())
+	item.key = butils.SafeCopy(item.key, butils.ParseKey(it.iitr.Key()))
 
-	item.vptr = y.SafeCopy(item.vptr, vs.Value)
+	item.vptr = butils.SafeCopy(item.vptr, vs.Value)
 	item.val = nil
 	if it.opt.PrefetchValues {
 		item.wg.Add(1)
@@ -610,9 +610,9 @@ func (it *Iterator) Seek(key []byte) {
 	}
 
 	if !it.opt.Reverse {
-		key = y.KeyWithTs(key, it.txn.readTs)
+		key = butils.KeyWithTs(key, it.txn.readTs)
 	} else {
-		key = y.KeyWithTs(key, 0)
+		key = butils.KeyWithTs(key, 0)
 	}
 	it.iitr.Seek(key)
 	it.prefetch()

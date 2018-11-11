@@ -1,3 +1,5 @@
+// +build dragonfly freebsd windows
+
 /*
  * Copyright 2018-Present Alexander Shvid and Contributors
  * Copyright 2017 Dgraph Labs, Inc. and Contributors
@@ -15,17 +17,10 @@
  * limitations under the License.
  */
 
-package options
+package butils
 
-// FileLoadingMode specifies how data in LSM table files and value log files should
-// be loaded.
-type FileLoadingMode int
+import "syscall"
 
-const (
-	// FileIO indicates that files must be loaded using standard I/O
-	FileIO FileLoadingMode = iota
-	// LoadToRAM indicates that file must be loaded into RAM
-	LoadToRAM
-	// MemoryMap indicates that that the file must be memory-mapped
-	MemoryMap
-)
+func init() {
+	datasyncFileFlag = syscall.O_SYNC
+}

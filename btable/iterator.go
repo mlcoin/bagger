@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-package table
+package btable
 
 import (
 	"bytes"
@@ -23,7 +23,7 @@ import (
 	"math"
 	"sort"
 
-	"github.com/bigbagger/bagger/y"
+	"github.com/bigbagger/bagger/butils"
 	"github.com/pkg/errors"
 )
 
@@ -84,7 +84,7 @@ func (itr *blockIterator) Seek(key []byte, whence int) {
 	var done bool
 	for itr.Init(); itr.Valid(); itr.Next() {
 		k := itr.Key()
-		if y.CompareKeys(k, key) >= 0 {
+		if butils.CompareKeys(k, key) >= 0 {
 			// We are done as k is >= key.
 			done = true
 			break
@@ -124,7 +124,7 @@ func (itr *blockIterator) parseKV(h header) {
 			itr.pos, h.klen, h.vlen, len(itr.data), h)
 		return
 	}
-	itr.val = y.SafeCopy(itr.val, itr.data[itr.pos:itr.pos+uint32(h.vlen)])
+	itr.val = butils.SafeCopy(itr.val, itr.data[itr.pos:itr.pos+uint32(h.vlen)])
 	itr.pos += uint32(h.vlen)
 }
 
@@ -141,7 +141,7 @@ func (itr *blockIterator) Next() {
 	itr.last = h // Store the last header.
 
 	if h.klen == 0 && h.plen == 0 {
-		// Last entry in the table.
+		// Last entry in the btable.
 		itr.err = io.EOF
 		return
 	}
@@ -149,7 +149,7 @@ func (itr *blockIterator) Next() {
 	// Populate baseKey if it isn't set yet. This would only happen for the first Next.
 	if len(itr.baseKey) == 0 {
 		// This should be the first Next() for this block. Hence, prefix length should be zero.
-		y.AssertTrue(h.plen == 0)
+		butils.AssertTrue(h.plen == 0)
 		itr.baseKey = itr.data[itr.pos : itr.pos+uint32(h.klen)]
 	}
 	itr.parseKV(h)
@@ -171,7 +171,7 @@ func (itr *blockIterator) Prev() {
 	itr.pos = itr.last.prev
 
 	var h header
-	y.AssertTruef(itr.pos < uint32(len(itr.data)), "%d %d", itr.pos, len(itr.data))
+	butils.AssertTruef(itr.pos < uint32(len(itr.data)), "%d %d", itr.pos, len(itr.data))
 	itr.pos += uint32(h.Decode(itr.data[itr.pos:]))
 	itr.parseKV(h)
 	itr.last = h
@@ -221,7 +221,7 @@ func (itr *Iterator) reset() {
 	itr.err = nil
 }
 
-// Valid follows the y.Iterator interface
+// Valid follows the butils.Iterator interface
 func (itr *Iterator) Valid() bool {
 	return itr.err == nil
 }
@@ -283,10 +283,10 @@ func (itr *Iterator) seekFrom(key []byte, whence int) {
 
 	idx := sort.Search(len(itr.t.blockIndex), func(idx int) bool {
 		ko := itr.t.blockIndex[idx]
-		return y.CompareKeys(ko.key, key) > 0
+		return butils.CompareKeys(ko.key, key) > 0
 	})
 	if idx == 0 {
-		// The smallest key in our table is already strictly > key. We can return that.
+		// The smallest key in our btable is already strictly > key. We can return that.
 		// This is like a SeekToFirst.
 		itr.seekHelper(0, key)
 		return
@@ -302,8 +302,8 @@ func (itr *Iterator) seekFrom(key []byte, whence int) {
 	if itr.err == io.EOF {
 		// Case 1. Need to visit block[idx].
 		if idx == len(itr.t.blockIndex) {
-			// If idx == len(itr.t.blockIndex), then input key is greater than ANY element of table.
-			// There's nothing we can do. Valid() should return false as we seek to end of table.
+			// If idx == len(itr.t.blockIndex), then input key is greater than ANY element of btable.
+			// There's nothing we can do. Valid() should return false as we seek to end of btable.
 			return
 		}
 		// Since block[idx].smallest is > key. This is essentially a block[idx].SeekToFirst.
@@ -383,18 +383,18 @@ func (itr *Iterator) prev() {
 	}
 }
 
-// Key follows the y.Iterator interface
+// Key follows the butils.Iterator interface
 func (itr *Iterator) Key() []byte {
 	return itr.bi.Key()
 }
 
-// Value follows the y.Iterator interface
-func (itr *Iterator) Value() (ret y.ValueStruct) {
+// Value follows the butils.Iterator interface
+func (itr *Iterator) Value() (ret butils.ValueStruct) {
 	ret.Decode(itr.bi.Value())
 	return
 }
 
-// Next follows the y.Iterator interface
+// Next follows the butils.Iterator interface
 func (itr *Iterator) Next() {
 	if !itr.reversed {
 		itr.next()
@@ -403,7 +403,7 @@ func (itr *Iterator) Next() {
 	}
 }
 
-// Rewind follows the y.Iterator interface
+// Rewind follows the butils.Iterator interface
 func (itr *Iterator) Rewind() {
 	if !itr.reversed {
 		itr.seekToFirst()
@@ -412,7 +412,7 @@ func (itr *Iterator) Rewind() {
 	}
 }
 
-// Seek follows the y.Iterator interface
+// Seek follows the butils.Iterator interface
 func (itr *Iterator) Seek(key []byte) {
 	if !itr.reversed {
 		itr.seek(key)
@@ -454,7 +454,7 @@ func (s *ConcatIterator) setIdx(idx int) {
 	}
 }
 
-// Rewind implements y.Interface
+// Rewind implements butils.Interface
 func (s *ConcatIterator) Rewind() {
 	if len(s.iters) == 0 {
 		return
@@ -467,18 +467,18 @@ func (s *ConcatIterator) Rewind() {
 	s.cur.Rewind()
 }
 
-// Valid implements y.Interface
+// Valid implements butils.Interface
 func (s *ConcatIterator) Valid() bool {
 	return s.cur != nil && s.cur.Valid()
 }
 
-// Key implements y.Interface
+// Key implements butils.Interface
 func (s *ConcatIterator) Key() []byte {
 	return s.cur.Key()
 }
 
-// Value implements y.Interface
-func (s *ConcatIterator) Value() y.ValueStruct {
+// Value implements butils.Interface
+func (s *ConcatIterator) Value() butils.ValueStruct {
 	return s.cur.Value()
 }
 
@@ -487,12 +487,12 @@ func (s *ConcatIterator) Seek(key []byte) {
 	var idx int
 	if !s.reversed {
 		idx = sort.Search(len(s.tables), func(i int) bool {
-			return y.CompareKeys(s.tables[i].Biggest(), key) >= 0
+			return butils.CompareKeys(s.tables[i].Biggest(), key) >= 0
 		})
 	} else {
 		n := len(s.tables)
 		idx = n - 1 - sort.Search(n, func(i int) bool {
-			return y.CompareKeys(s.tables[n-1-i].Smallest(), key) <= 0
+			return butils.CompareKeys(s.tables[n-1-i].Smallest(), key) <= 0
 		})
 	}
 	if idx >= len(s.tables) || idx < 0 {
@@ -500,7 +500,7 @@ func (s *ConcatIterator) Seek(key []byte) {
 		return
 	}
 	// For reversed=false, we know s.tables[i-1].Biggest() < key. Thus, the
-	// previous table cannot possibly contain key.
+	// previous btable cannot possibly contain key.
 	s.setIdx(idx)
 	s.cur.Seek(key)
 }
@@ -509,7 +509,7 @@ func (s *ConcatIterator) Seek(key []byte) {
 func (s *ConcatIterator) Next() {
 	s.cur.Next()
 	if s.cur.Valid() {
-		// Nothing to do. Just stay with the current table.
+		// Nothing to do. Just stay with the current btable.
 		return
 	}
 	for { // In case there are empty tables.
@@ -529,7 +529,7 @@ func (s *ConcatIterator) Next() {
 	}
 }
 
-// Close implements y.Interface.
+// Close implements butils.Interface.
 func (s *ConcatIterator) Close() error {
 	for _, it := range s.iters {
 		if err := it.Close(); err != nil {

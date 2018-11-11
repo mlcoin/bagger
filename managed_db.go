@@ -23,7 +23,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/bigbagger/bagger/y"
+	"github.com/bigbagger/bagger/butils"
 	"github.com/pkg/errors"
 )
 
@@ -84,7 +84,7 @@ var errDone = errors.New("Done deleting keys")
 // - Stop accepting new writes.
 // - Pause the compactions.
 // - Pick all tables from all levels, create a changeset to delete all these
-// tables and apply it to manifest. DO not pick up the latest table from level
+// tables and apply it to manifest. DO not pick up the latest btable from level
 // 0, to preserve the (persistent) baggerHead key.
 // - Iterate over the KVs in Level 0, and run deletes on them via transactions.
 // - The deletions are done at the same timestamp as the latest version of the
@@ -119,7 +119,7 @@ func (db *DB) DropAll() error {
 	atomic.StoreInt32(&db.blockWrites, 0)
 	// Need compactions to happen so deletes below can be flushed out.
 	if db.closers.compactors != nil {
-		db.closers.compactors = y.NewCloser(1)
+		db.closers.compactors = butils.NewCloser(1)
 		db.lc.startCompact(db.closers.compactors)
 	}
 	if err != nil {

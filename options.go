@@ -18,7 +18,7 @@
 package bagger
 
 import (
-	"github.com/bigbagger/bagger/options"
+	"github.com/bigbagger/bagger/boptions"
 )
 
 // NOTE: Keep the comments in the following to 75 chars width, so they
@@ -26,7 +26,7 @@ import (
 
 // Options are params for creating DB object.
 //
-// This package provides DefaultOptions which contains options that should
+// This package provides DefaultOptions which contains boptions that should
 // work for most applications. Consider using that as a starting point before
 // customizing it for your own needs.
 type Options struct {
@@ -45,10 +45,10 @@ type Options struct {
 	SyncWrites bool
 
 	// How should LSM tree be accessed.
-	TableLoadingMode options.FileLoadingMode
+	TableLoadingMode boptions.FileLoadingMode
 
 	// How should value log be accessed.
-	ValueLogLoadingMode options.FileLoadingMode
+	ValueLogLoadingMode boptions.FileLoadingMode
 
 	// How many versions to keep per key.
 	NumVersionsToKeep int
@@ -56,7 +56,7 @@ type Options struct {
 	// 3. Flags that user might want to review
 	// ----------------------------------------
 	// The following affect all levels of LSM tree.
-	MaxTableSize        int64 // Each table (or file) is at most this size.
+	MaxTableSize        int64 // Each btable (or file) is at most this size.
 	LevelSizeMultiplier int   // Equals SizeOf(Li+1)/SizeOf(Li).
 	MaxLevels           int   // Maximum number of levels of compaction.
 	// If value size >= this threshold, only store value offsets in tree.
@@ -106,16 +106,16 @@ type Options struct {
 	Truncate bool
 }
 
-// DefaultOptions sets a list of recommended options for good performance.
+// DefaultOptions sets a list of recommended boptions for good performance.
 // Feel free to modify these to suit your needs.
 var DefaultOptions = Options{
 	DoNotCompact:        false,
 	LevelOneSize:        256 << 20,
 	LevelSizeMultiplier: 10,
-	TableLoadingMode:    options.LoadToRAM,
-	ValueLogLoadingMode: options.MemoryMap,
-	// table.MemoryMap to mmap() the tables.
-	// table.Nothing to not preload the tables.
+	TableLoadingMode:    boptions.LoadToRAM,
+	ValueLogLoadingMode: boptions.MemoryMap,
+	// btable.MemoryMap to mmap() the tables.
+	// btable.Nothing to not preload the tables.
 	MaxLevels:               7,
 	MaxTableSize:            64 << 20,
 	NumCompactors:           3,
@@ -137,7 +137,7 @@ var DefaultOptions = Options{
 
 // LSMOnlyOptions follows from DefaultOptions, but sets a higher ValueThreshold
 // so values would be colocated with the LSM tree, with value log largely acting
-// as a write-ahead log only. These options would reduce the disk usage of value
+// as a write-ahead log only. These boptions would reduce the disk usage of value
 // log, and make Bagger act more like a typical LSM tree.
 var LSMOnlyOptions = Options{}
 
@@ -145,11 +145,11 @@ func init() {
 	LSMOnlyOptions = DefaultOptions
 
 	LSMOnlyOptions.ValueThreshold = 65500 // Max value length which fits in uint16.
-	// Let's not set any other options, because they can cause issues with the
+	// Let's not set any other boptions, because they can cause issues with the
 	// size of key-value a user can pass to Bagger. For e.g., if we set
 	// ValueLogFileSize to 64MB, a user can't pass a value more than that.
 	// Setting it to ValueLogMaxEntries to 1000, can generate too many files.
-	// These options are better configured on a usage basis, than broadly here.
+	// These boptions are better configured on a usage basis, than broadly here.
 	// The ValueThreshold is the most important setting a user needs to do to
 	// achieve a heavier usage of LSM tree.
 	// NOTE: If a user does not want to set 64KB as the ValueThreshold because

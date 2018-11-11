@@ -31,7 +31,7 @@ Key differences:
 - We combine the findLessThan, findGreaterOrEqual, etc into one function.
 */
 
-package skl
+package bskiplist
 
 import (
 	"math"
@@ -39,7 +39,7 @@ import (
 	"sync/atomic"
 	"unsafe"
 
-	"github.com/bigbagger/bagger/y"
+	"github.com/bigbagger/bagger/butils"
 )
 
 const (
@@ -102,7 +102,7 @@ func (s *Skiplist) DecrRef() {
 
 func (s *Skiplist) valid() bool { return s.arena != nil }
 
-func newNode(arena *Arena, key []byte, v y.ValueStruct, height int) *node {
+func newNode(arena *Arena, key []byte, v butils.ValueStruct, height int) *node {
 	// The base level is already allocated in the node struct.
 	offset := arena.putNode(height)
 	node := arena.getNode(offset)
@@ -126,7 +126,7 @@ func decodeValue(value uint64) (valOffset uint32, valSize uint16) {
 // NewSkiplist makes a new empty skiplist, with a given arena size
 func NewSkiplist(arenaSize int64) *Skiplist {
 	arena := newArena(arenaSize)
-	head := newNode(arena, nil, y.ValueStruct{}, maxHeight)
+	head := newNode(arena, nil, butils.ValueStruct{}, maxHeight)
 	return &Skiplist{
 		height: 1,
 		head:   head,
@@ -144,7 +144,7 @@ func (s *node) key(arena *Arena) []byte {
 	return arena.getKey(s.keyOffset, s.keySize)
 }
 
-func (s *node) setValue(arena *Arena, v y.ValueStruct) {
+func (s *node) setValue(arena *Arena, v butils.ValueStruct) {
 	valOffset := arena.putVal(v)
 	value := encodeValue(valOffset, v.EncodedSize())
 	atomic.StoreUint64(&s.value, value)
@@ -161,8 +161,8 @@ func (s *node) casNextOffset(h int, old, val uint32) bool {
 // Returns true if key is strictly > n.key.
 // If n is nil, this is an "end" marker and we return false.
 //func (s *Skiplist) keyIsAfterNode(key []byte, n *node) bool {
-//	y.AssertTrue(n != s.head)
-//	return n != nil && y.CompareKeys(key, n.key) > 0
+//	butils.AssertTrue(n != s.head)
+//	return n != nil && butils.CompareKeys(key, n.key) > 0
 //}
 
 func randomHeight() int {
@@ -208,7 +208,7 @@ func (s *Skiplist) findNear(key []byte, less bool, allowEqual bool) (*node, bool
 		}
 
 		nextKey := next.key(s.arena)
-		cmp := y.CompareKeys(key, nextKey)
+		cmp := butils.CompareKeys(key, nextKey)
 		if cmp > 0 {
 			// x.key < next.key < key. We can continue to move right.
 			x = next
@@ -263,7 +263,7 @@ func (s *Skiplist) findSpliceForLevel(key []byte, before *node, level int) (*nod
 			return before, next
 		}
 		nextKey := next.key(s.arena)
-		cmp := y.CompareKeys(key, nextKey)
+		cmp := butils.CompareKeys(key, nextKey)
 		if cmp == 0 {
 			// Equality case.
 			return next, next
@@ -281,7 +281,7 @@ func (s *Skiplist) getHeight() int32 {
 }
 
 // Put inserts the key-value pair.
-func (s *Skiplist) Put(key []byte, v y.ValueStruct) {
+func (s *Skiplist) Put(key []byte, v butils.ValueStruct) {
 	// Since we allow overwrite, we may not need to create a new node. We might not even need to
 	// increase the height. Let's defer these actions.
 
@@ -318,13 +318,13 @@ func (s *Skiplist) Put(key []byte, v y.ValueStruct) {
 	for i := 0; i < height; i++ {
 		for {
 			if prev[i] == nil {
-				y.AssertTrue(i > 1) // This cannot happen in base level.
+				butils.AssertTrue(i > 1) // This cannot happen in base level.
 				// We haven't computed prev, next for this level because height exceeds old listHeight.
 				// For these levels, we expect the lists to be sparse, so we can just search from head.
 				prev[i], next[i] = s.findSpliceForLevel(key, s.head, i)
 				// Someone adds the exact same key before we are able to do so. This can only happen on
 				// the base level. But we know we are not on the base level.
-				y.AssertTrue(prev[i] != next[i])
+				butils.AssertTrue(prev[i] != next[i])
 			}
 			nextOffset := s.arena.getNodeOffset(next[i])
 			x.tower[i] = nextOffset
@@ -337,7 +337,7 @@ func (s *Skiplist) Put(key []byte, v y.ValueStruct) {
 			// because it is unlikely that lots of nodes are inserted between prev[i] and next[i].
 			prev[i], next[i] = s.findSpliceForLevel(key, prev[i], i)
 			if prev[i] == next[i] {
-				y.AssertTruef(i == 0, "Equality can happen only on base level: %d", i)
+				butils.AssertTruef(i == 0, "Equality can happen only on base level: %d", i)
 				prev[i].setValue(s.arena, v)
 				return
 			}
@@ -373,20 +373,20 @@ func (s *Skiplist) findLast() *node {
 
 // Get gets the value associated with the key. It returns a valid value if it finds equal or earlier
 // version of the same key.
-func (s *Skiplist) Get(key []byte) y.ValueStruct {
+func (s *Skiplist) Get(key []byte) butils.ValueStruct {
 	n, _ := s.findNear(key, false, true) // findGreaterOrEqual.
 	if n == nil {
-		return y.ValueStruct{}
+		return butils.ValueStruct{}
 	}
 
 	nextKey := s.arena.getKey(n.keyOffset, n.keySize)
-	if !y.SameKey(key, nextKey) {
-		return y.ValueStruct{}
+	if !butils.SameKey(key, nextKey) {
+		return butils.ValueStruct{}
 	}
 
 	valOffset, valSize := n.getValueOffset()
 	vs := s.arena.getVal(valOffset, valSize)
-	vs.Version = y.ParseTs(nextKey)
+	vs.Version = butils.ParseTs(nextKey)
 	return vs
 }
 
@@ -422,20 +422,20 @@ func (s *Iterator) Key() []byte {
 }
 
 // Value returns value.
-func (s *Iterator) Value() y.ValueStruct {
+func (s *Iterator) Value() butils.ValueStruct {
 	valOffset, valSize := s.n.getValueOffset()
 	return s.list.arena.getVal(valOffset, valSize)
 }
 
 // Next advances to the next position.
 func (s *Iterator) Next() {
-	y.AssertTrue(s.Valid())
+	butils.AssertTrue(s.Valid())
 	s.n = s.list.getNext(s.n, 0)
 }
 
 // Prev advances to the previous position.
 func (s *Iterator) Prev() {
-	y.AssertTrue(s.Valid())
+	butils.AssertTrue(s.Valid())
 	s.n, _ = s.list.findNear(s.Key(), true, false) // find <. No equality allowed.
 }
 
@@ -477,7 +477,7 @@ func (s *Skiplist) NewUniIterator(reversed bool) *UniIterator {
 	}
 }
 
-// Next implements y.Interface
+// Next implements butils.Interface
 func (s *UniIterator) Next() {
 	if !s.reversed {
 		s.iter.Next()
@@ -486,7 +486,7 @@ func (s *UniIterator) Next() {
 	}
 }
 
-// Rewind implements y.Interface
+// Rewind implements butils.Interface
 func (s *UniIterator) Rewind() {
 	if !s.reversed {
 		s.iter.SeekToFirst()
@@ -495,7 +495,7 @@ func (s *UniIterator) Rewind() {
 	}
 }
 
-// Seek implements y.Interface
+// Seek implements butils.Interface
 func (s *UniIterator) Seek(key []byte) {
 	if !s.reversed {
 		s.iter.Seek(key)
@@ -504,14 +504,14 @@ func (s *UniIterator) Seek(key []byte) {
 	}
 }
 
-// Key implements y.Interface
+// Key implements butils.Interface
 func (s *UniIterator) Key() []byte { return s.iter.Key() }
 
-// Value implements y.Interface
-func (s *UniIterator) Value() y.ValueStruct { return s.iter.Value() }
+// Value implements butils.Interface
+func (s *UniIterator) Value() butils.ValueStruct { return s.iter.Value() }
 
-// Valid implements y.Interface
+// Valid implements butils.Interface
 func (s *UniIterator) Valid() bool { return s.iter.Valid() }
 
-// Close implements y.Interface (and frees up the iter's resources)
+// Close implements butils.Interface (and frees up the iter's resources)
 func (s *UniIterator) Close() error { return s.iter.Close() }

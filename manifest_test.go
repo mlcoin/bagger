@@ -28,10 +28,10 @@ import (
 
 	"golang.org/x/net/trace"
 
-	"github.com/bigbagger/bagger/options"
-	"github.com/bigbagger/bagger/protos"
-	"github.com/bigbagger/bagger/table"
-	"github.com/bigbagger/bagger/y"
+	"github.com/bigbagger/bagger/boptions"
+	"github.com/bigbagger/bagger/bprotos"
+	"github.com/bigbagger/bagger/btable"
+	"github.com/bigbagger/bagger/butils"
 	"github.com/stretchr/testify/require"
 )
 
@@ -110,7 +110,7 @@ func key(prefix string, i int) string {
 }
 
 func buildTestTable(t *testing.T, prefix string, n int) *os.File {
-	y.AssertTrue(n <= 10000)
+	butils.AssertTrue(n <= 10000)
 	keyValues := make([][]string, n)
 	for i := 0; i < n; i++ {
 		k := key(prefix, i)
@@ -120,27 +120,27 @@ func buildTestTable(t *testing.T, prefix string, n int) *os.File {
 	return buildTable(t, keyValues)
 }
 
-// TODO - Move these to somewhere where table package can also use it.
+// TODO - Move these to somewhere where btable package can also use it.
 // keyValues is n by 2 where n is number of pairs.
 func buildTable(t *testing.T, keyValues [][]string) *os.File {
-	b := table.NewTableBuilder()
+	b := btable.NewTableBuilder()
 	defer b.Close()
 	// TODO: Add test for file garbage collection here. No files should be left after the tests here.
 
 	filename := fmt.Sprintf("%s%s%d.sst", os.TempDir(), string(os.PathSeparator), rand.Int63())
-	f, err := y.OpenSyncedFile(filename, true)
+	f, err := butils.OpenSyncedFile(filename, true)
 	if t != nil {
 		require.NoError(t, err)
 	} else {
-		y.Check(err)
+		butils.Check(err)
 	}
 
 	sort.Slice(keyValues, func(i, j int) bool {
 		return keyValues[i][0] < keyValues[j][0]
 	})
 	for _, kv := range keyValues {
-		y.AssertTrue(len(kv) == 2)
-		err := b.Add(y.KeyWithTs([]byte(kv[0]), 10), y.ValueStruct{
+		butils.AssertTrue(len(kv) == 2)
+		err := b.Add(butils.KeyWithTs([]byte(kv[0]), 10), butils.ValueStruct{
 			Value:    []byte(kv[1]),
 			Meta:     'A',
 			UserMeta: 0,
@@ -148,12 +148,12 @@ func buildTable(t *testing.T, keyValues [][]string) *os.File {
 		if t != nil {
 			require.NoError(t, err)
 		} else {
-			y.Check(err)
+			butils.Check(err)
 		}
 	}
 	f.Write(b.Finish())
 	f.Close()
-	f, _ = y.OpenSyncedFile(filename, true)
+	f, _ = butils.OpenSyncedFile(filename, true)
 	return f
 }
 
@@ -170,7 +170,7 @@ func TestOverlappingKeyRangeError(t *testing.T) {
 	lh0 := newLevelHandler(kv, 0)
 	lh1 := newLevelHandler(kv, 1)
 	f := buildTestTable(t, "k", 2)
-	t1, err := table.OpenTable(f, options.MemoryMap)
+	t1, err := btable.OpenTable(f, boptions.MemoryMap)
 	require.NoError(t, err)
 	defer t1.DecrRef()
 
@@ -191,7 +191,7 @@ func TestOverlappingKeyRangeError(t *testing.T) {
 	lc.runCompactDef(0, cd)
 
 	f = buildTestTable(t, "l", 2)
-	t2, err := table.OpenTable(f, options.MemoryMap)
+	t2, err := btable.OpenTable(f, boptions.MemoryMap)
 	require.NoError(t, err)
 	defer t2.DecrRef()
 	done = lh0.tryAddLevel0Table(t2)
@@ -221,13 +221,13 @@ func TestManifestRewrite(t *testing.T) {
 	require.Equal(t, 0, m.Creations)
 	require.Equal(t, 0, m.Deletions)
 
-	err = mf.addChanges([]*protos.ManifestChange{
+	err = mf.addChanges([]*bprotos.ManifestChange{
 		makeTableCreateChange(0, 0),
 	})
 	require.NoError(t, err)
 
 	for i := uint64(0); i < uint64(deletionsThreshold*3); i++ {
-		ch := []*protos.ManifestChange{
+		ch := []*bprotos.ManifestChange{
 			makeTableCreateChange(i+1, 0),
 			makeTableDeleteChange(i),
 		}

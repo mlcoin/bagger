@@ -35,8 +35,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/bigbagger/bagger/options"
-	"github.com/bigbagger/bagger/y"
+	"github.com/bigbagger/bagger/boptions"
+	"github.com/bigbagger/bagger/butils"
 	"github.com/pkg/errors"
 	"golang.org/x/net/trace"
 )
@@ -67,7 +67,7 @@ type logFile struct {
 	fid         uint32
 	fmap        []byte
 	size        uint32
-	loadingMode options.FileLoadingMode
+	loadingMode boptions.FileLoadingMode
 }
 
 // openReadOnly assumes that we have a write lock on logFile.
@@ -82,45 +82,45 @@ func (lf *logFile) openReadOnly() error {
 	if err != nil {
 		return errors.Wrapf(err, "Unable to check stat for %q", lf.path)
 	}
-	y.AssertTrue(fi.Size() <= math.MaxUint32)
+	butils.AssertTrue(fi.Size() <= math.MaxUint32)
 	lf.size = uint32(fi.Size())
 
 	if err = lf.mmap(fi.Size()); err != nil {
 		_ = lf.fd.Close()
-		return y.Wrapf(err, "Unable to map file")
+		return butils.Wrapf(err, "Unable to map file")
 	}
 
 	return nil
 }
 
 func (lf *logFile) mmap(size int64) (err error) {
-	if lf.loadingMode != options.MemoryMap {
+	if lf.loadingMode != boptions.MemoryMap {
 		// Nothing to do
 		return nil
 	}
-	lf.fmap, err = y.Mmap(lf.fd, false, size)
+	lf.fmap, err = butils.Mmap(lf.fd, false, size)
 	if err == nil {
-		err = y.Madvise(lf.fmap, false) // Disable readahead
+		err = butils.Madvise(lf.fmap, false) // Disable readahead
 	}
 	return err
 }
 
 func (lf *logFile) munmap() (err error) {
-	if lf.loadingMode != options.MemoryMap {
+	if lf.loadingMode != boptions.MemoryMap {
 		// Nothing to do
 		return nil
 	}
-	if err := y.Munmap(lf.fmap); err != nil {
+	if err := butils.Munmap(lf.fmap); err != nil {
 		return errors.Wrapf(err, "Unable to munmap value log: %q", lf.path)
 	}
 	return nil
 }
 
 // Acquire lock on mmap/file if you are calling this
-func (lf *logFile) read(p valuePointer, s *y.Slice) (buf []byte, err error) {
+func (lf *logFile) read(p valuePointer, s *butils.Slice) (buf []byte, err error) {
 	var nbr int64
 	offset := p.Offset
-	if lf.loadingMode == options.FileIO {
+	if lf.loadingMode == boptions.FileIO {
 		buf = s.Resize(int(p.Len))
 		var n int
 		n, err = lf.fd.ReadAt(buf, int64(offset))
@@ -132,14 +132,14 @@ func (lf *logFile) read(p valuePointer, s *y.Slice) (buf []byte, err error) {
 		size := int64(len(lf.fmap))
 		valsz := p.Len
 		if int64(offset) >= size || int64(offset+valsz) > size {
-			err = y.ErrEOF
+			err = butils.ErrEOF
 		} else {
 			buf = lf.fmap[offset : offset+valsz]
 			nbr = int64(valsz)
 		}
 	}
-	y.NumReads.Add(1)
-	y.NumBytesRead.Add(nbr)
+	butils.NumReads.Add(1)
+	butils.NumBytesRead.Add(nbr)
 	return buf, err
 }
 
@@ -194,7 +194,7 @@ func (r *safeRead) Entry(reader *bufio.Reader) (*Entry, error) {
 	var hbuf [headerBufSize]byte
 	var err error
 
-	hash := crc32.New(y.CastagnoliCrcTable)
+	hash := crc32.New(butils.CastagnoliCrcTable)
 	tee := io.TeeReader(reader, hash)
 	if _, err = io.ReadFull(tee, hbuf[:]); err != nil {
 		return nil, err
@@ -299,7 +299,7 @@ func (vlog *valueLog) iterate(lf *logFile, offset uint32, fn logEntry) (uint32, 
 		vp.Fid = lf.fid
 
 		if e.meta&bitTxn > 0 {
-			txnTs := y.ParseTs(e.Key)
+			txnTs := butils.ParseTs(e.Key)
 			if lastCommit == 0 {
 				lastCommit = txnTs
 			}
@@ -337,13 +337,13 @@ func (vlog *valueLog) iterate(lf *logFile, offset uint32, fn logEntry) (uint32, 
 
 func (vlog *valueLog) rewrite(f *logFile, tr trace.Trace) error {
 	maxFid := atomic.LoadUint32(&vlog.maxFid)
-	y.AssertTruef(uint32(f.fid) < maxFid, "fid to move: %d. Current max fid: %d", f.fid, maxFid)
+	butils.AssertTruef(uint32(f.fid) < maxFid, "fid to move: %d. Current max fid: %d", f.fid, maxFid)
 	tr.LazyPrintf("Rewriting fid: %d", f.fid)
 
 	wb := make([]*Entry, 0, 1000)
 	var size int64
 
-	y.AssertTrue(vlog.db != nil)
+	butils.AssertTrue(vlog.db != nil)
 	var count, moved int
 	fe := func(e Entry) error {
 		count++
@@ -488,7 +488,7 @@ func (vlog *valueLog) deleteMoveKeysFor(fid uint32, tr trace.Trace) error {
 			var vp valuePointer
 			vp.Decode(item.vptr)
 			if vp.Fid == fid {
-				e := &Entry{Key: y.KeyWithTs(item.Key(), item.Version()), meta: bitDelete}
+				e := &Entry{Key: butils.KeyWithTs(item.Key(), item.Version()), meta: bitDelete}
 				result = append(result, e)
 			}
 		}
@@ -649,7 +649,7 @@ func (vlog *valueLog) createVlogFile(fid uint32) (*logFile, error) {
 	vlog.numEntriesWritten = 0
 
 	var err error
-	if lf.fd, err = y.CreateSyncedFile(path, vlog.opt.SyncWrites); err != nil {
+	if lf.fd, err = butils.CreateSyncedFile(path, vlog.opt.SyncWrites); err != nil {
 		return nil, errFile(err, lf.path, "Create value log file")
 	}
 	if err = syncDir(vlog.dirPath); err != nil {
@@ -695,7 +695,7 @@ func (vlog *valueLog) replayLog(lf *logFile, offset uint32, replayFn logEntry) e
 
 	// End offset is different from file size. So, we should truncate the file
 	// to that size.
-	y.AssertTrue(int64(endOffset) <= fi.Size())
+	butils.AssertTrue(int64(endOffset) <= fi.Size())
 	if !vlog.opt.Truncate {
 		return ErrTruncateNeeded
 	}
@@ -727,7 +727,7 @@ func (vlog *valueLog) open(db *DB, ptr valuePointer, replayFn logEntry) error {
 	fids := vlog.sortedFids()
 	for _, fid := range fids {
 		lf, ok := vlog.filesMap[fid]
-		y.AssertTrue(ok)
+		butils.AssertTrue(ok)
 
 		// This file is before the value head pointer. So, we don't need to
 		// replay it, and can just open it in readonly mode.
@@ -745,7 +745,7 @@ func (vlog *valueLog) open(db *DB, ptr valuePointer, replayFn logEntry) error {
 		Infof("Replaying file id: %d at offset: %d\n", fid, offset)
 		now := time.Now()
 		// Replay and possible truncation done. Now we can open the file as per
-		// user specified options.
+		// user specified boptions.
 		if err := vlog.replayLog(lf, offset, replayFn); err != nil {
 			return err
 		}
@@ -760,12 +760,12 @@ func (vlog *valueLog) open(db *DB, ptr valuePointer, replayFn logEntry) error {
 			switch {
 			case vlog.opt.ReadOnly:
 				// If we have read only, we don't need SyncWrites.
-				flags |= y.ReadOnly
+				flags |= butils.ReadOnly
 			case vlog.opt.SyncWrites:
-				flags |= y.Sync
+				flags |= butils.Sync
 			}
 			var err error
-			if lf.fd, err = y.OpenExistingFile(vlog.fpath(fid), flags); err != nil {
+			if lf.fd, err = butils.OpenExistingFile(vlog.fpath(fid), flags); err != nil {
 				return errFile(err, lf.path, "Open existing file")
 			}
 		}
@@ -773,7 +773,7 @@ func (vlog *valueLog) open(db *DB, ptr valuePointer, replayFn logEntry) error {
 
 	// Seek to the end to start writing.
 	last, ok := vlog.filesMap[vlog.maxFid]
-	y.AssertTrue(ok)
+	butils.AssertTrue(ok)
 	lastOffset, err := last.fd.Seek(0, io.SeekEnd)
 	if err != nil {
 		return errFile(err, last.path, "file.Seek to end")
@@ -896,8 +896,8 @@ func (vlog *valueLog) write(reqs []*request) error {
 		if err != nil {
 			return errors.Wrapf(err, "Unable to write to value log file: %q", curlf.path)
 		}
-		y.NumWrites.Add(1)
-		y.NumBytesWritten.Add(int64(n))
+		butils.NumWrites.Add(1)
+		butils.NumBytesWritten.Add(int64(n))
 		vlog.elog.Printf("Done")
 		atomic.AddUint32(&vlog.writableLogOffset, uint32(n))
 		vlog.buf.Reset()
@@ -910,7 +910,7 @@ func (vlog *valueLog) write(reqs []*request) error {
 			}
 
 			newid := atomic.AddUint32(&vlog.maxFid, 1)
-			y.AssertTruef(newid > 0, "newid has overflown uint32: %v", newid)
+			butils.AssertTruef(newid > 0, "newid has overflown uint32: %v", newid)
 			newlf, err := vlog.createVlogFile(newid)
 			if err != nil {
 				return err
@@ -971,7 +971,7 @@ func (vlog *valueLog) getFileRLocked(fid uint32) (*logFile, error) {
 
 // Read reads the value log at a given location.
 // TODO: Make this read private.
-func (vlog *valueLog) Read(vp valuePointer, s *y.Slice) ([]byte, func(), error) {
+func (vlog *valueLog) Read(vp valuePointer, s *butils.Slice) ([]byte, func(), error) {
 	// Check for valid offset if we are reading to writable log.
 	maxFid := atomic.LoadUint32(&vlog.maxFid)
 	if vp.Fid == maxFid && vp.Offset >= vlog.woffset() {
@@ -990,14 +990,14 @@ func (vlog *valueLog) Read(vp valuePointer, s *y.Slice) ([]byte, func(), error) 
 	return buf[n : n+h.vlen], cb, nil
 }
 
-func (vlog *valueLog) readValueBytes(vp valuePointer, s *y.Slice) ([]byte, func(), error) {
+func (vlog *valueLog) readValueBytes(vp valuePointer, s *butils.Slice) ([]byte, func(), error) {
 	lf, err := vlog.getFileRLocked(vp.Fid)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	buf, err := lf.read(vp, s)
-	if vlog.opt.ValueLogLoadingMode == options.MemoryMap {
+	if vlog.opt.ValueLogLoadingMode == boptions.MemoryMap {
 		return buf, lf.lock.RUnlock, err
 	}
 	// If we are using File I/O we unlock the file immediately
@@ -1077,8 +1077,8 @@ func (vlog *valueLog) pickLog(head valuePointer, tr trace.Trace) (files []*logFi
 	return files
 }
 
-func discardEntry(e Entry, vs y.ValueStruct) bool {
-	if vs.Version != y.ParseTs(e.Key) {
+func discardEntry(e Entry, vs butils.ValueStruct) bool {
+	if vs.Version != butils.ParseTs(e.Key) {
 		// Version not found. Discard.
 		return true
 	}
@@ -1133,8 +1133,8 @@ func (vlog *valueLog) doRunGC(lf *logFile, discardRatio float64, tr trace.Trace)
 
 	var r reason
 	start := time.Now()
-	y.AssertTrue(vlog.db != nil)
-	s := new(y.Slice)
+	butils.AssertTrue(vlog.db != nil)
+	s := new(butils.Slice)
 	var numIterations int
 	_, err = vlog.iterate(lf, 0, func(e Entry, vp valuePointer) error {
 		numIterations++
@@ -1170,7 +1170,7 @@ func (vlog *valueLog) doRunGC(lf *logFile, discardRatio float64, tr trace.Trace)
 		}
 
 		// Value is still present in value log.
-		y.AssertTrue(len(vs.Value) > 0)
+		butils.AssertTrue(len(vs.Value) > 0)
 		vp.Decode(vs.Value)
 
 		if vp.Fid > lf.fid {
@@ -1225,7 +1225,7 @@ func (vlog *valueLog) doRunGC(lf *logFile, discardRatio float64, tr trace.Trace)
 	return nil
 }
 
-func (vlog *valueLog) waitOnGC(lc *y.Closer) {
+func (vlog *valueLog) waitOnGC(lc *butils.Closer) {
 	defer lc.Done()
 
 	<-lc.HasBeenClosed() // Wait for lc to be closed.

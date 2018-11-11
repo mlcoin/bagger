@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-package y
+package butils
 
 import (
 	"bytes"
@@ -45,7 +45,7 @@ var (
 	// This is O_DSYNC (datasync) on platforms that support it -- see file_unix.go
 	datasyncFileFlag = 0x0
 
-	// CastagnoliCrcTable is a CRC32 polynomial table
+	// CastagnoliCrcTable is a CRC32 polynomial btable
 	CastagnoliCrcTable = crc32.MakeTable(crc32.Castagnoli)
 )
 

@@ -23,8 +23,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/bigbagger/bagger/table"
-	"github.com/bigbagger/bagger/y"
+	"github.com/bigbagger/bagger/btable"
+	"github.com/bigbagger/bagger/butils"
 	"github.com/pkg/errors"
 )
 
@@ -76,13 +76,13 @@ func (s *levelHandler) validate() error {
 			return errors.Errorf("Level %d, j=%d numTables=%d", s.level, j, numTables)
 		}
 
-		if y.CompareKeys(s.tables[j-1].Biggest(), s.tables[j].Smallest()) >= 0 {
+		if butils.CompareKeys(s.tables[j-1].Biggest(), s.tables[j].Smallest()) >= 0 {
 			return errors.Errorf(
 				"Inter: %q vs %q: level=%d j=%d numTables=%d",
 				string(s.tables[j-1].Biggest()), string(s.tables[j].Smallest()), s.level, j, numTables)
 		}
 
-		if y.CompareKeys(s.tables[j].Smallest(), s.tables[j].Biggest()) > 0 {
+		if butils.CompareKeys(s.tables[j].Smallest(), s.tables[j].Biggest()) > 0 {
 			return errors.Errorf(
 				"Intra: %q vs %q: level=%d j=%d numTables=%d",
 				s.tables[j].Smallest(), s.tables[j].Biggest(), s.level, j, numTables)
@@ -107,9 +107,9 @@ func (s *levelHandler) validate() error {
 // 	defer s.RUnlock()
 // 	s.elog.Printf("Level %d:", s.level)
 // 	for _, t := range s.tables {
-// 		y.Printf(" [%s, %s]", t.Smallest(), t.Biggest())
+// 		butils.Printf(" [%s, %s]", t.Smallest(), t.Biggest())
 // 	}
-// 	y.Printf("\n")
+// 	butils.Printf("\n")
 // }
 
 // reserveFileID reserves a unique file id.
@@ -120,13 +120,13 @@ func (s *levelsController) reserveFileID() uint64 {
 
 func getIDMap(dir string) map[uint64]struct{} {
 	fileInfos, err := ioutil.ReadDir(dir)
-	y.Check(err)
+	butils.Check(err)
 	idMap := make(map[uint64]struct{})
 	for _, info := range fileInfos {
 		if info.IsDir() {
 			continue
 		}
-		fileID, ok := table.ParseFileID(info.Name())
+		fileID, ok := btable.ParseFileID(info.Name())
 		if !ok {
 			continue
 		}

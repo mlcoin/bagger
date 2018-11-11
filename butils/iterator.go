@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-package y
+package butils
 
 import (
 	"bytes"
@@ -77,7 +77,7 @@ func (v *ValueStruct) Encode(b []byte) {
 
 // EncodeTo should be kept in sync with the Encode function above. The reason
 // this function exists is to avoid creating byte arrays per key-value pair in
-// table/builder.go.
+// btable/builder.go.
 func (v *ValueStruct) EncodeTo(buf *bytes.Buffer) {
 	buf.WriteByte(v.Meta)
 	buf.WriteByte(v.UserMeta)
@@ -254,7 +254,7 @@ func (s *MergeIterator) Seek(key []byte) {
 	s.initHeap()
 }
 
-// Close implements y.Iterator
+// Close implements butils.Iterator
 func (s *MergeIterator) Close() error {
 	for _, itr := range s.all {
 		if err := itr.Close(); err != nil {

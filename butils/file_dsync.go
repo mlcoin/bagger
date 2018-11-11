@@ -1,12 +1,14 @@
+// +build !dragonfly,!freebsd,!windows
+
 /*
  * Copyright 2018-Present Alexander Shvid and Contributors
- * Copyright (C) 2017 Dgraph Labs, Inc. and Contributors
+ * Copyright 2017 Dgraph Labs, Inc. and Contributors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *    http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -15,22 +17,10 @@
  * limitations under the License.
  */
 
-// Use protos/gen.sh to generate .pb.go files.
-syntax = "proto3";
+package butils
 
-package protos;
+import "golang.org/x/sys/unix"
 
-message ManifestChangeSet {
-        // A set of changes that are applied atomically.
-        repeated ManifestChange changes = 1;
-}
-
-message ManifestChange {
-        uint64 Id = 1;
-        enum Operation {
-                CREATE = 0;
-                DELETE = 1;
-        }
-        Operation Op = 2;
-        uint32 Level = 3;  // Only used for CREATE
+func init() {
+	datasyncFileFlag = unix.O_DSYNC
 }

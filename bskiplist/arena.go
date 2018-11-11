@@ -15,13 +15,13 @@
  * limitations under the License.
  */
 
-package skl
+package bskiplist
 
 import (
 	"sync/atomic"
 	"unsafe"
 
-	"github.com/bigbagger/bagger/y"
+	"github.com/bigbagger/bagger/butils"
 )
 
 const (
@@ -69,7 +69,7 @@ func (s *Arena) putNode(height int) uint32 {
 	// Pad the allocation with enough bytes to ensure pointer alignment.
 	l := uint32(MaxNodeSize - unusedSize + nodeAlign)
 	n := atomic.AddUint32(&s.n, l)
-	y.AssertTruef(int(n) <= len(s.buf),
+	butils.AssertTruef(int(n) <= len(s.buf),
 		"Arena too small, toWrite:%d newTotal:%d limit:%d",
 		l, n, len(s.buf))
 
@@ -82,10 +82,10 @@ func (s *Arena) putNode(height int) uint32 {
 // val buffer. Returns an offset into buf. User is responsible for remembering
 // size of val. We could also store this size inside arena but the encoding and
 // decoding will incur some overhead.
-func (s *Arena) putVal(v y.ValueStruct) uint32 {
+func (s *Arena) putVal(v butils.ValueStruct) uint32 {
 	l := uint32(v.EncodedSize())
 	n := atomic.AddUint32(&s.n, l)
-	y.AssertTruef(int(n) <= len(s.buf),
+	butils.AssertTruef(int(n) <= len(s.buf),
 		"Arena too small, toWrite:%d newTotal:%d limit:%d",
 		l, n, len(s.buf))
 	m := n - l
@@ -96,11 +96,11 @@ func (s *Arena) putVal(v y.ValueStruct) uint32 {
 func (s *Arena) putKey(key []byte) uint32 {
 	l := uint32(len(key))
 	n := atomic.AddUint32(&s.n, l)
-	y.AssertTruef(int(n) <= len(s.buf),
+	butils.AssertTruef(int(n) <= len(s.buf),
 		"Arena too small, toWrite:%d newTotal:%d limit:%d",
 		l, n, len(s.buf))
 	m := n - l
-	y.AssertTrue(len(key) == copy(s.buf[m:n], key))
+	butils.AssertTrue(len(key) == copy(s.buf[m:n], key))
 	return m
 }
 
@@ -121,7 +121,7 @@ func (s *Arena) getKey(offset uint32, size uint16) []byte {
 
 // getVal returns byte slice at offset. The given size should be just the value
 // size and should NOT include the meta bytes.
-func (s *Arena) getVal(offset uint32, size uint16) (ret y.ValueStruct) {
+func (s *Arena) getVal(offset uint32, size uint16) (ret butils.ValueStruct) {
 	ret.Decode(s.buf[offset : offset+uint32(size)])
 	return
 }

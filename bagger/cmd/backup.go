@@ -20,8 +20,8 @@ package cmd
 import (
 	"os"
 
-	"github.com/bigbagger/bagger"
 	"github.com/spf13/cobra"
+	"bagger"
 )
 
 var backupFile string

@@ -30,8 +30,8 @@ import (
 	"time"
 
 	"github.com/bigbagger/bagger"
-	"github.com/bigbagger/bagger/options"
-	"github.com/bigbagger/bagger/y"
+	"github.com/bigbagger/bagger/boptions"
+	"github.com/bigbagger/bagger/butils"
 	"github.com/spf13/cobra"
 )
 
@@ -91,13 +91,13 @@ func key(account int) []byte {
 
 func toAccount(key []byte) int {
 	i, err := strconv.Atoi(string(key[len(keyPrefix):]))
-	y.Check(err)
+	butils.Check(err)
 	return i
 }
 
 func toUint64(val []byte) uint64 {
 	u, err := strconv.ParseUint(string(val), 10, 64)
-	y.Check(err)
+	butils.Check(err)
 	return uint64(u)
 }
 
@@ -168,7 +168,7 @@ type account struct {
 
 func diff(a, b []account) string {
 	var buf bytes.Buffer
-	y.AssertTruef(len(a) == len(b), "len(a)=%d. len(b)=%d\n", len(a), len(b))
+	butils.AssertTruef(len(a) == len(b), "len(a)=%d. len(b)=%d\n", len(a), len(b))
 	for i := range a {
 		ai := a[i]
 		bi := b[i]
@@ -291,7 +291,7 @@ func compareTwo(db *bagger.DB, before, after uint64) {
 	if err == errFailure {
 		// pass
 	} else {
-		y.Check(err)
+		butils.Check(err)
 	}
 	txn.Discard()
 
@@ -300,7 +300,7 @@ func compareTwo(db *bagger.DB, before, after uint64) {
 	if err == errFailure {
 		// pass
 	} else {
-		y.Check(err)
+		butils.Check(err)
 	}
 	txn.Discard()
 
@@ -368,9 +368,9 @@ func runTest(cmd *cobra.Command, args []string) error {
 	opts.NumVersionsToKeep = int(math.MaxInt32)
 	opts.ValueThreshold = 1 // Make all values go to value log.
 	if mmap {
-		opts.TableLoadingMode = options.MemoryMap
+		opts.TableLoadingMode = boptions.MemoryMap
 	}
-	log.Printf("Opening DB with options: %+v\n", opts)
+	log.Printf("Opening DB with boptions: %+v\n", opts)
 
 	db, err := bagger.Open(opts)
 	if err != nil {
@@ -380,17 +380,17 @@ func runTest(cmd *cobra.Command, args []string) error {
 
 	wb := db.NewWriteBatch()
 	for i := 0; i < numAccounts; i++ {
-		y.Check(wb.Set(key(i), toSlice(initialBal), 0))
+		butils.Check(wb.Set(key(i), toSlice(initialBal), 0))
 	}
 	log.Println("Waiting for writes to be done...")
-	y.Check(wb.Flush())
+	butils.Check(wb.Flush())
 
 	log.Println("Bank initialization OK. Commencing test.")
 	log.Printf("Running with %d accounts, and %d goroutines.\n", numAccounts, numGoroutines)
 	log.Printf("Using keyPrefix: %s\n", keyPrefix)
 
 	dur, err := time.ParseDuration(duration)
-	y.Check(err)
+	butils.Check(err)
 
 	// startTs := time.Now()
 	endTs := time.Now().Add(dur)
@@ -469,7 +469,7 @@ func runTest(cmd *cobra.Command, args []string) error {
 				return
 			}
 
-			y.Check(db.View(func(txn *bagger.Txn) error {
+			butils.Check(db.View(func(txn *bagger.Txn) error {
 				_, err := seekTotal(txn)
 				if err != nil {
 					log.Printf("Error while calculating total: %v", err)

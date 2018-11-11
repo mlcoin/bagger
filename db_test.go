@@ -34,9 +34,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bigbagger/bagger/options"
+	"github.com/bigbagger/bagger/boptions"
 
-	"github.com/bigbagger/bagger/y"
+	"github.com/bigbagger/bagger/butils"
 	"github.com/stretchr/testify/require"
 )
 
@@ -50,7 +50,7 @@ func getTestOptions(dir string) Options {
 	opt.ValueDir = dir
 	opt.SyncWrites = false
 	if !*mmap {
-		opt.ValueLogLoadingMode = options.FileIO
+		opt.ValueLogLoadingMode = boptions.FileIO
 	}
 	return opt
 }
@@ -387,7 +387,7 @@ func TestGetMore(t *testing.T) {
 			got := string(getItemValue(t, item))
 			if expectedValue != got {
 
-				vs, err := db.get(y.KeyWithTs(k, math.MaxUint64))
+				vs, err := db.get(butils.KeyWithTs(k, math.MaxUint64))
 				require.NoError(t, err)
 				fmt.Printf("wanted=%q Item: %s\n", k, item)
 				fmt.Printf("on re-run, got version: %+v\n", vs)
@@ -706,7 +706,7 @@ func TestIterateParallel(t *testing.T) {
 		}
 		for _, txn := range txns {
 			txn.CommitWith(func(err error) {
-				y.Check(err)
+				butils.Check(err)
 				wg.Done()
 			})
 		}
@@ -1208,7 +1208,7 @@ func TestWriteDeadlock(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, len(val), len(out))
 
-			key := y.Copy(item.Key())
+			key := butils.Copy(item.Key())
 			rand.Read(val)
 			require.NoError(t, txn.Set(key, val))
 			print(&count)
@@ -1525,7 +1525,7 @@ func TestMinReadTs(t *testing.T) {
 	runBaggerTest(t, nil, func(t *testing.T, db *DB) {
 		for i := 0; i < 10; i++ {
 			require.NoError(t, db.Update(func(txn *Txn) error {
-				return txn.Set([]byte("x"), []byte("y"))
+				return txn.Set([]byte("x"), []byte("butils"))
 			}))
 		}
 		time.Sleep(time.Millisecond)
@@ -1539,7 +1539,7 @@ func TestMinReadTs(t *testing.T) {
 		readTxn := db.NewTransaction(false)
 		for i := 0; i < 10; i++ {
 			require.NoError(t, db.Update(func(txn *Txn) error {
-				return txn.Set([]byte("x"), []byte("y"))
+				return txn.Set([]byte("x"), []byte("butils"))
 			}))
 		}
 		require.Equal(t, uint64(20), db.orc.readTs())

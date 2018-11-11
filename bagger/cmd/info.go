@@ -27,8 +27,8 @@ import (
 	"time"
 
 	"github.com/bigbagger/bagger"
-	"github.com/bigbagger/bagger/table"
-	"github.com/bigbagger/bagger/y"
+	"github.com/bigbagger/bagger/btable"
+	"github.com/bigbagger/bagger/butils"
 	humanize "github.com/dustin/go-humanize"
 	"github.com/spf13/cobra"
 )
@@ -83,8 +83,8 @@ func tableInfo(dir, valueDir string) error {
 
 	tables := db.Tables()
 	for _, t := range tables {
-		lk, lv := y.ParseKey(t.Left), y.ParseTs(t.Left)
-		rk, rv := y.ParseKey(t.Right), y.ParseTs(t.Right)
+		lk, lv := butils.ParseKey(t.Left), butils.ParseTs(t.Left)
+		rk, rv := butils.ParseKey(t.Right), butils.ParseTs(t.Right)
 		fmt.Printf("SSTable [L%d, %03d] [%20X, v%-10d -> %20X, v%-10d]\n",
 			t.Level, t.ID, lk, lv, rk, rv)
 	}
@@ -151,7 +151,7 @@ func printInfo(dir, valueDir string) error {
 	levelSizes := make([]int64, len(manifest.Levels))
 	for level, lm := range manifest.Levels {
 		// fmt.Printf("\n[Level %d]\n", level)
-		// We create a sorted list of table ID's so that output is in consistent order.
+		// We create a sorted list of btable ID's so that output is in consistent order.
 		tableIDs := make([]uint64, 0, len(lm.Tables))
 		for id := range lm.Tables {
 			tableIDs = append(tableIDs, id)
@@ -160,7 +160,7 @@ func printInfo(dir, valueDir string) error {
 			return tableIDs[i] < tableIDs[j]
 		})
 		for _, tableID := range tableIDs {
-			tableFile := table.IDToFilename(tableID)
+			tableFile := btable.IDToFilename(tableID)
 			file, ok := fileinfoByName[tableFile]
 			if ok {
 				fileinfoMarked[tableFile] = true

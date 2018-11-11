@@ -26,8 +26,8 @@ import (
 
 	"golang.org/x/net/trace"
 
-	"github.com/bigbagger/bagger/table"
-	"github.com/bigbagger/bagger/y"
+	"github.com/bigbagger/bagger/btable"
+	"github.com/bigbagger/bagger/butils"
 )
 
 type keyRange struct {
@@ -54,32 +54,32 @@ func (r keyRange) overlapsWith(dst keyRange) bool {
 	}
 
 	// If my left is greater than dst right, we have no overlap.
-	if y.CompareKeys(r.left, dst.right) > 0 {
+	if butils.CompareKeys(r.left, dst.right) > 0 {
 		return false
 	}
 	// If my right is less than dst left, we have no overlap.
-	if y.CompareKeys(r.right, dst.left) < 0 {
+	if butils.CompareKeys(r.right, dst.left) < 0 {
 		return false
 	}
 	// We have overlap.
 	return true
 }
 
-func getKeyRange(tables []*table.Table) keyRange {
-	y.AssertTrue(len(tables) > 0)
+func getKeyRange(tables []*btable.Table) keyRange {
+	butils.AssertTrue(len(tables) > 0)
 	smallest := tables[0].Smallest()
 	biggest := tables[0].Biggest()
 	for i := 1; i < len(tables); i++ {
-		if y.CompareKeys(tables[i].Smallest(), smallest) < 0 {
+		if butils.CompareKeys(tables[i].Smallest(), smallest) < 0 {
 			smallest = tables[i].Smallest()
 		}
-		if y.CompareKeys(tables[i].Biggest(), biggest) > 0 {
+		if butils.CompareKeys(tables[i].Biggest(), biggest) > 0 {
 			biggest = tables[i].Biggest()
 		}
 	}
 	return keyRange{
-		left:  y.KeyWithTs(y.ParseKey(smallest), math.MaxUint64),
-		right: y.KeyWithTs(y.ParseKey(biggest), 0),
+		left:  butils.KeyWithTs(butils.ParseKey(smallest), math.MaxUint64),
+		right: butils.KeyWithTs(butils.ParseKey(biggest), 0),
 	}
 }
 
@@ -161,7 +161,7 @@ func (cs *compactStatus) compareAndAdd(_ thisAndNextLevelRLocked, cd compactDef)
 
 	level := cd.thisLevel.level
 
-	y.AssertTruef(level < len(cs.levels)-1, "Got level %d. Max levels: %d", level, len(cs.levels))
+	butils.AssertTruef(level < len(cs.levels)-1, "Got level %d. Max levels: %d", level, len(cs.levels))
 	thisLevel := cs.levels[level]
 	nextLevel := cs.levels[level+1]
 
@@ -191,7 +191,7 @@ func (cs *compactStatus) delete(cd compactDef) {
 	defer cs.Unlock()
 
 	level := cd.thisLevel.level
-	y.AssertTruef(level < len(cs.levels)-1, "Got level %d. Max levels: %d", level, len(cs.levels))
+	butils.AssertTruef(level < len(cs.levels)-1, "Got level %d. Max levels: %d", level, len(cs.levels))
 
 	thisLevel := cs.levels[level]
 	nextLevel := cs.levels[level+1]

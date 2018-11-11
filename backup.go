@@ -23,11 +23,11 @@ import (
 	"io"
 	"sync"
 
-	"github.com/bigbagger/bagger/protos"
-	"github.com/bigbagger/bagger/y"
+	"github.com/bigbagger/bagger/bprotos"
+	"github.com/bigbagger/bagger/butils"
 )
 
-func writeTo(entry *protos.KVPair, w io.Writer) error {
+func writeTo(entry *bprotos.KVPair, w io.Writer) error {
 	if err := binary.Write(w, binary.LittleEndian, uint64(entry.Size())); err != nil {
 		return err
 	}
@@ -66,8 +66,8 @@ func (db *DB) Backup(w io.Writer, since uint64) (uint64, error) {
 				continue
 			}
 
-			entry := &protos.KVPair{
-				Key:       y.Copy(item.Key()),
+			entry := &bprotos.KVPair{
+				Key:       butils.Copy(item.Key()),
 				Value:     valCopy,
 				UserMeta:  []byte{item.UserMeta()},
 				Version:   item.Version(),
@@ -130,7 +130,7 @@ func (db *DB) Load(r io.Reader) error {
 			unmarshalBuf = make([]byte, sz)
 		}
 
-		e := &protos.KVPair{}
+		e := &bprotos.KVPair{}
 		if _, err = io.ReadFull(br, unmarshalBuf[:sz]); err != nil {
 			return err
 		}
@@ -138,7 +138,7 @@ func (db *DB) Load(r io.Reader) error {
 			return err
 		}
 		entries = append(entries, &Entry{
-			Key:       y.KeyWithTs(e.Key, e.Version),
+			Key:       butils.KeyWithTs(e.Key, e.Version),
 			Value:     e.Value,
 			UserMeta:  e.UserMeta[0],
 			ExpiresAt: e.ExpiresAt,

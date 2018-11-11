@@ -22,8 +22,8 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/bigbagger/bagger/table"
-	"github.com/bigbagger/bagger/y"
+	"github.com/bigbagger/bagger/btable"
+	"github.com/bigbagger/bagger/butils"
 	"github.com/pkg/errors"
 )
 
@@ -33,8 +33,8 @@ type levelHandler struct {
 
 	// For level >= 1, tables are sorted by key ranges, which do not overlap.
 	// For level 0, tables are sorted by time.
-	// For level 0, newest table are at the back. Compact the oldest one first, which is at the front.
-	tables    []*table.Table
+	// For level 0, newest btable are at the back. Compact the oldest one first, which is at the front.
+	tables    []*btable.Table
 	totalSize int64
 
 	// The following are initialized once and const.
@@ -51,7 +51,7 @@ func (s *levelHandler) getTotalSize() int64 {
 }
 
 // initTables replaces s.tables with given tables. This is done during loading.
-func (s *levelHandler) initTables(tables []*table.Table) {
+func (s *levelHandler) initTables(tables []*btable.Table) {
 	s.Lock()
 	defer s.Unlock()
 
@@ -70,13 +70,13 @@ func (s *levelHandler) initTables(tables []*table.Table) {
 	} else {
 		// Sort tables by keys.
 		sort.Slice(s.tables, func(i, j int) bool {
-			return y.CompareKeys(s.tables[i].Smallest(), s.tables[j].Smallest()) < 0
+			return butils.CompareKeys(s.tables[i].Smallest(), s.tables[j].Smallest()) < 0
 		})
 	}
 }
 
 // deleteTables remove tables idx0, ..., idx1-1.
-func (s *levelHandler) deleteTables(toDel []*table.Table) error {
+func (s *levelHandler) deleteTables(toDel []*btable.Table) error {
 	s.Lock() // s.Unlock() below
 
 	toDelMap := make(map[uint64]struct{})
@@ -85,7 +85,7 @@ func (s *levelHandler) deleteTables(toDel []*table.Table) error {
 	}
 
 	// Make a copy as iterators might be keeping a slice of tables.
-	var newTables []*table.Table
+	var newTables []*btable.Table
 	for _, t := range s.tables {
 		_, found := toDelMap[t.ID()]
 		if !found {
@@ -103,7 +103,7 @@ func (s *levelHandler) deleteTables(toDel []*table.Table) error {
 
 // replaceTables will replace tables[left:right] with newTables. Note this EXCLUDES tables[right].
 // You must call decr() to delete the old tables _after_ writing the update to the manifest.
-func (s *levelHandler) replaceTables(newTables []*table.Table) error {
+func (s *levelHandler) replaceTables(newTables []*btable.Table) error {
 	// Need to re-search the range of tables in this level to be replaced as other goroutines might
 	// be changing it as well.  (They can't touch our tables, but if they add/remove other tables,
 	// the indices get shifted around.)
@@ -125,7 +125,7 @@ func (s *levelHandler) replaceTables(newTables []*table.Table) error {
 	}
 	left, right := s.overlappingTables(levelHandlerRLocked{}, kr)
 
-	toDecr := make([]*table.Table, right-left)
+	toDecr := make([]*btable.Table, right-left)
 	// Update totalSize and reference counts.
 	for i := left; i < right; i++ {
 		tbl := s.tables[i]
@@ -136,18 +136,18 @@ func (s *levelHandler) replaceTables(newTables []*table.Table) error {
 	// To be safe, just make a copy. TODO: Be more careful and avoid copying.
 	numDeleted := right - left
 	numAdded := len(newTables)
-	tables := make([]*table.Table, len(s.tables)-numDeleted+numAdded)
-	y.AssertTrue(left == copy(tables, s.tables[:left]))
+	tables := make([]*btable.Table, len(s.tables)-numDeleted+numAdded)
+	butils.AssertTrue(left == copy(tables, s.tables[:left]))
 	t := tables[left:]
-	y.AssertTrue(numAdded == copy(t, newTables))
+	butils.AssertTrue(numAdded == copy(t, newTables))
 	t = t[numAdded:]
-	y.AssertTrue(len(s.tables[right:]) == copy(t, s.tables[right:]))
+	butils.AssertTrue(len(s.tables[right:]) == copy(t, s.tables[right:]))
 	s.tables = tables
 	s.Unlock() // s.Unlock before we DecrRef tables -- that can be slow.
 	return decrRefs(toDecr)
 }
 
-func decrRefs(tables []*table.Table) error {
+func decrRefs(tables []*btable.Table) error {
 	for _, table := range tables {
 		if err := table.DecrRef(); err != nil {
 			return err
@@ -165,9 +165,9 @@ func newLevelHandler(db *DB, level int) *levelHandler {
 }
 
 // tryAddLevel0Table returns true if ok and no stalling.
-func (s *levelHandler) tryAddLevel0Table(t *table.Table) bool {
-	y.AssertTrue(s.level == 0)
-	// Need lock as we may be deleting the first table during a level 0 compaction.
+func (s *levelHandler) tryAddLevel0Table(t *btable.Table) bool {
+	butils.AssertTrue(s.level == 0)
+	// Need lock as we may be deleting the first btable during a level 0 compaction.
 	s.Lock()
 	defer s.Unlock()
 	if len(s.tables) >= s.db.opt.NumLevelZeroTablesStall {
@@ -200,15 +200,15 @@ func (s *levelHandler) close() error {
 }
 
 // getTableForKey acquires a read-lock to access s.tables. It returns a list of tableHandlers.
-func (s *levelHandler) getTableForKey(key []byte) ([]*table.Table, func() error) {
+func (s *levelHandler) getTableForKey(key []byte) ([]*btable.Table, func() error) {
 	s.RLock()
 	defer s.RUnlock()
 
 	if s.level == 0 {
-		// For level 0, we need to check every table. Remember to make a copy as s.tables may change
+		// For level 0, we need to check every btable. Remember to make a copy as s.tables may change
 		// once we exit this function, and we don't want to lock s.tables while seeking in tables.
 		// CAUTION: Reverse the tables.
-		out := make([]*table.Table, 0, len(s.tables))
+		out := make([]*btable.Table, 0, len(s.tables))
 		for i := len(s.tables) - 1; i >= 0; i-- {
 			out = append(out, s.tables[i])
 			s.tables[i].IncrRef()
@@ -224,7 +224,7 @@ func (s *levelHandler) getTableForKey(key []byte) ([]*table.Table, func() error)
 	}
 	// For level >= 1, we can do a binary search as key range does not overlap.
 	idx := sort.Search(len(s.tables), func(i int) bool {
-		return y.CompareKeys(s.tables[i].Biggest(), key) >= 0
+		return butils.CompareKeys(s.tables[i].Biggest(), key) >= 0
 	})
 	if idx >= len(s.tables) {
 		// Given key is strictly > than every element we have.
@@ -232,31 +232,31 @@ func (s *levelHandler) getTableForKey(key []byte) ([]*table.Table, func() error)
 	}
 	tbl := s.tables[idx]
 	tbl.IncrRef()
-	return []*table.Table{tbl}, tbl.DecrRef
+	return []*btable.Table{tbl}, tbl.DecrRef
 }
 
 // get returns value for a given key or the key after that. If not found, return nil.
-func (s *levelHandler) get(key []byte) (y.ValueStruct, error) {
+func (s *levelHandler) get(key []byte) (butils.ValueStruct, error) {
 	tables, decr := s.getTableForKey(key)
-	keyNoTs := y.ParseKey(key)
+	keyNoTs := butils.ParseKey(key)
 
-	var maxVs y.ValueStruct
+	var maxVs butils.ValueStruct
 	for _, th := range tables {
 		if th.DoesNotHave(keyNoTs) {
-			y.NumLSMBloomHits.Add(s.strLevel, 1)
+			butils.NumLSMBloomHits.Add(s.strLevel, 1)
 			continue
 		}
 
 		it := th.NewIterator(false)
 		defer it.Close()
 
-		y.NumLSMGets.Add(s.strLevel, 1)
+		butils.NumLSMGets.Add(s.strLevel, 1)
 		it.Seek(key)
 		if !it.Valid() {
 			continue
 		}
-		if y.SameKey(key, it.Key()) {
-			if version := y.ParseTs(it.Key()); maxVs.Version < version {
+		if butils.SameKey(key, it.Key()) {
+			if version := butils.ParseTs(it.Key()); maxVs.Version < version {
 				maxVs = it.Value()
 				maxVs.Version = version
 			}
@@ -266,17 +266,17 @@ func (s *levelHandler) get(key []byte) (y.ValueStruct, error) {
 }
 
 // appendIterators appends iterators to an array of iterators, for merging.
-// Note: This obtains references for the table handlers. Remember to close these iterators.
-func (s *levelHandler) appendIterators(iters []y.Iterator, reversed bool) []y.Iterator {
+// Note: This obtains references for the btable handlers. Remember to close these iterators.
+func (s *levelHandler) appendIterators(iters []butils.Iterator, reversed bool) []butils.Iterator {
 	s.RLock()
 	defer s.RUnlock()
 
 	if s.level == 0 {
 		// Remember to add in reverse order!
-		// The newer table at the end of s.tables should be added first as it takes precedence.
+		// The newer btable at the end of s.tables should be added first as it takes precedence.
 		return appendIteratorsReversed(iters, s.tables, reversed)
 	}
-	return append(iters, table.NewConcatIterator(s.tables, reversed))
+	return append(iters, btable.NewConcatIterator(s.tables, reversed))
 }
 
 type levelHandlerRLocked struct{}
@@ -286,10 +286,10 @@ type levelHandlerRLocked struct{}
 // pass an empty parameter declaring such.
 func (s *levelHandler) overlappingTables(_ levelHandlerRLocked, kr keyRange) (int, int) {
 	left := sort.Search(len(s.tables), func(i int) bool {
-		return y.CompareKeys(kr.left, s.tables[i].Biggest()) <= 0
+		return butils.CompareKeys(kr.left, s.tables[i].Biggest()) <= 0
 	})
 	right := sort.Search(len(s.tables), func(i int) bool {
-		return y.CompareKeys(kr.right, s.tables[i].Smallest()) < 0
+		return butils.CompareKeys(kr.right, s.tables[i].Smallest()) < 0
 	})
 	return left, right
 }
