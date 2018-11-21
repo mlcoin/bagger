@@ -139,7 +139,7 @@ func (db *DB) Load(r io.Reader) error {
 			return err
 		}
 		entries = append(entries, &Entry{
-			Key:       bkey.KeyWithTs(e.Key, e.Version),
+			Key:       bkey.KeyWithVersion(e.Key, e.Version),
 			Value:     e.Value,
 			UserMeta:  e.UserMeta[0],
 			ExpiresAt: e.ExpiresAt,

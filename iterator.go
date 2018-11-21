@@ -184,7 +184,7 @@ func (item *Item) yieldItemValue() ([]byte, func(), error) {
 		runCallback(cb)
 		// Do not put baggerMove on the left in append. It seems to cause some sort of manipulation.
 		key = append([]byte{}, baggerMove...)
-		key = append(key, bkey.KeyWithTs(item.Key(), item.Version())...)
+		key = append(key, bkey.KeyWithVersion(item.Key(), item.Version())...)
 		// Note that we can't set item.key to move key, because that would
 		// change the key user sees before and after this call. Also, this move
 		// logic is internal logic and should not impact the external behavior
@@ -491,7 +491,7 @@ func (it *Iterator) parseItem() bool {
 	}
 
 	// Skip any versions which are beyond the readTs.
-	version := bkey.ParseTs(key)
+	version := bkey.ParseVersion(key)
 	if version > it.readTs {
 		mi.Next()
 		return false
@@ -542,7 +542,7 @@ FILL:
 	}
 
 	// Reverse direction.
-	nextTs := bkey.ParseTs(mi.Key())
+	nextTs := bkey.ParseVersion(mi.Key())
 	mik := bkey.ParseKey(mi.Key())
 	if nextTs <= it.readTs && bytes.Equal(mik, item.key) {
 		// This is a valid potential candidate.
@@ -559,7 +559,7 @@ func (it *Iterator) fill(item *Item) {
 	item.userMeta = vs.UserMeta
 	item.expiresAt = vs.ExpiresAt
 
-	item.version = bkey.ParseTs(it.iitr.Key())
+	item.version = bkey.ParseVersion(it.iitr.Key())
 	item.key = butils.SafeCopy(item.key, bkey.ParseKey(it.iitr.Key()))
 
 	item.vptr = butils.SafeCopy(item.vptr, vs.Value)
@@ -611,9 +611,9 @@ func (it *Iterator) Seek(key []byte) {
 	}
 
 	if !it.opt.Reverse {
-		key = bkey.KeyWithTs(key, it.txn.readTs)
+		key = bkey.KeyWithVersion(key, it.txn.readTs)
 	} else {
-		key = bkey.KeyWithTs(key, 0)
+		key = bkey.KeyWithVersion(key, 0)
 	}
 	it.iitr.Seek(key)
 	it.prefetch()

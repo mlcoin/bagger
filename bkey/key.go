@@ -25,26 +25,25 @@ import (
 	"github.com/pkg/errors"
 )
 
-// KeyWithTs generates a new key by appending ts to key.
-func KeyWithTs(key []byte, ts uint64) []byte {
+// KeyWithVersion generates a new key by appending ts to key.
+func KeyWithVersion(key []byte, version uint64) []byte {
 	out := make([]byte, len(key)+8)
 	copy(out, key)
-	binary.BigEndian.PutUint64(out[len(key):], math.MaxUint64-ts)
+	binary.BigEndian.PutUint64(out[len(key):], math.MaxUint64-version)
 	return out
 }
 
-// ParseTs parses the timestamp from the key bytes.
-func ParseTs(key []byte) uint64 {
+// ParseVersion parses the version from the key bytes.
+func ParseVersion(key []byte) uint64 {
 	if len(key) <= 8 {
 		return 0
 	}
 	return math.MaxUint64 - binary.BigEndian.Uint64(key[len(key)-8:])
 }
 
-// CompareKeys checks the key without timestamp and checks the timestamp if keyNoTs
-// is same.
-// a<timestamp> would be sorted higher than aa<timestamp> if we use bytes.compare
-// All keys should have timestamp.
+// CompareKeys checks the key without version and then checks the version.
+// a<version> would be sorted higher than aa<version> if we use bytes.compare
+// All keys should have version.
 func CompareKeys(key1 []byte, key2 []byte) int {
 	AssertTrue(len(key1) > 8 && len(key2) > 8)
 	if cmp := bytes.Compare(key1[:len(key1)-8], key2[:len(key2)-8]); cmp != 0 {

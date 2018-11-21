@@ -388,7 +388,7 @@ func TestGetMore(t *testing.T) {
 			got := string(getItemValue(t, item))
 			if expectedValue != got {
 
-				vs, err := db.get(bkey.KeyWithTs(k, math.MaxUint64))
+				vs, err := db.get(bkey.KeyWithVersion(k, math.MaxUint64))
 				require.NoError(t, err)
 				fmt.Printf("wanted=%q Item: %s\n", k, item)
 				fmt.Printf("on re-run, got version: %+v\n", vs)

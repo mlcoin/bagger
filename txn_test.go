@@ -633,7 +633,7 @@ func TestIteratorAllVersionsWithDeleted(t *testing.T) {
 			require.NoError(t, err)
 			err = txn.db.batchSet([]*Entry{
 				{
-					Key:  bkey.KeyWithTs(item.key, item.version),
+					Key:  bkey.KeyWithVersion(item.key, item.version),
 					meta: bitDelete,
 				},
 			})

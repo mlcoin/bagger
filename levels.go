@@ -407,7 +407,7 @@ func (s *levelsController) compactBuildTables(
 			}
 
 			vs := it.Value()
-			version := bkey.ParseTs(it.Key())
+			version := bkey.ParseVersion(it.Key())
 			if version <= discardTs {
 				// Keep track of the number of versions encountered for this key. Only consider the
 				// versions which are below the minReadTs, otherwise, we might end up discarding the
@@ -593,9 +593,9 @@ func (s *levelsController) fillTables(cd *compactDef) bool {
 		cd.thisSize = t.Size()
 		cd.thisRange = keyRange{
 			// We pick all the versions of the smallest and the biggest key.
-			left: bkey.KeyWithTs(bkey.ParseKey(t.Smallest()), math.MaxUint64),
+			left: bkey.KeyWithVersion(bkey.ParseKey(t.Smallest()), math.MaxUint64),
 			// Note that version zero would be the rightmost key.
-			right: bkey.KeyWithTs(bkey.ParseKey(t.Biggest()), 0),
+			right: bkey.KeyWithVersion(bkey.ParseKey(t.Biggest()), 0),
 		}
 		if s.cstatus.overlapsWith(cd.thisLevel.level, cd.thisRange) {
 			continue
@@ -779,7 +779,7 @@ func (s *levelsController) get(key []byte, maxVs *butils.ValueStruct) (butils.Va
 	// read level L's tables post-compaction and level L+1's tables pre-compaction.  (If we do
 	// parallelize this, we will need to call the h.RLock() function by increasing order of level
 	// number.)
-	version := bkey.ParseTs(key)
+	version := bkey.ParseVersion(key)
 	for _, h := range s.levels {
 		vs, err := h.get(key) // Calls h.RLock() and h.RUnlock().
 		if err != nil {

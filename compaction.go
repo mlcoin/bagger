@@ -79,8 +79,8 @@ func getKeyRange(tables []*btable.Table) keyRange {
 		}
 	}
 	return keyRange{
-		left:  bkey.KeyWithTs(bkey.ParseKey(smallest), math.MaxUint64),
-		right: bkey.KeyWithTs(bkey.ParseKey(biggest), 0),
+		left:  bkey.KeyWithVersion(bkey.ParseKey(smallest), math.MaxUint64),
+		right: bkey.KeyWithVersion(bkey.ParseKey(biggest), 0),
 	}
 }
 

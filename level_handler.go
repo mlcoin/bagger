@@ -257,7 +257,7 @@ func (s *levelHandler) get(key []byte) (butils.ValueStruct, error) {
 			continue
 		}
 		if bkey.SameKey(key, it.Key()) {
-			if version := bkey.ParseTs(it.Key()); maxVs.Version < version {
+			if version := bkey.ParseVersion(it.Key()); maxVs.Version < version {
 				maxVs = it.Value()
 				maxVs.Version = version
 			}

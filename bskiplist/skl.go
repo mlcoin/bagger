@@ -387,7 +387,7 @@ func (s *Skiplist) Get(key []byte) butils.ValueStruct {
 
 	valOffset, valSize := n.getValueOffset()
 	vs := s.arena.getVal(valOffset, valSize)
-	vs.Version = bkey.ParseTs(nextKey)
+	vs.Version = bkey.ParseVersion(nextKey)
 	return vs
 }
 
