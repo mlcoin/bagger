@@ -28,9 +28,9 @@ import (
 
 	"github.com/bigbagger/bagger"
 	"github.com/bigbagger/bagger/btable"
-	"github.com/bigbagger/bagger/butils"
-	humanize "github.com/dustin/go-humanize"
+	"github.com/dustin/go-humanize"
 	"github.com/spf13/cobra"
+	"github.com/bigbagger/bagger/bkey"
 )
 
 var infoCmd = &cobra.Command{
@@ -83,8 +83,8 @@ func tableInfo(dir, valueDir string) error {
 
 	tables := db.Tables()
 	for _, t := range tables {
-		lk, lv := bkey.ParseKey(t.Left), bkey.ParseTs(t.Left)
-		rk, rv := bkey.ParseKey(t.Right), bkey.ParseTs(t.Right)
+		lk, lv := bkey.ParseKey(t.Left), bkey.ParseVersion(t.Left)
+		rk, rv := bkey.ParseKey(t.Right), bkey.ParseVersion(t.Right)
 		fmt.Printf("SSTable [L%d, %03d] [%20X, v%-10d -> %20X, v%-10d]\n",
 			t.Level, t.ID, lk, lv, rk, rv)
 	}

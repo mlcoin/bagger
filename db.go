@@ -36,6 +36,7 @@ import (
 	"github.com/pkg/errors"
 	"golang.org/x/net/trace"
 	"github.com/bigbagger/bagger/bkey"
+	"github.com/bigbagger/bagger/bval"
 )
 
 var (
@@ -86,13 +87,13 @@ const (
 func (out *DB) replayFunction() func(Entry, valuePointer) error {
 	type txnEntry struct {
 		nk []byte
-		v  butils.ValueStruct
+		v  bval.ValueStruct
 	}
 
 	var txn []txnEntry
 	var lastCommit uint64
 
-	toLSM := func(nk []byte, vs butils.ValueStruct) {
+	toLSM := func(nk []byte, vs bval.ValueStruct) {
 		for err := out.ensureRoomForWrite(); err != nil; err = out.ensureRoomForWrite() {
 			out.elog.Printf("Replay: Making room for writes")
 			time.Sleep(10 * time.Millisecond)
@@ -124,7 +125,7 @@ func (out *DB) replayFunction() func(Entry, valuePointer) error {
 			meta = meta | bitValuePointer
 		}
 
-		v := butils.ValueStruct{
+		v := bval.ValueStruct{
 			Value:    nv,
 			Meta:     meta,
 			UserMeta: e.UserMeta,
@@ -484,17 +485,17 @@ func (db *DB) getMemTables() ([]*bskiplist.Skiplist, func()) {
 // we will ALWAYS skip versions with ts greater than the key version).  However, if that key has
 // been moved, then for the corresponding movekey, we'll look through all the levels of the tree
 // to ensure that we pick the highest version of the movekey present.
-func (db *DB) get(key []byte) (butils.ValueStruct, error) {
+func (db *DB) get(key []byte) (bval.ValueStruct, error) {
 	tables, decr := db.getMemTables() // Lock should be released.
 	defer decr()
 
-	var maxVs *butils.ValueStruct
+	var maxVs *bval.ValueStruct
 	var version uint64
 	if bytes.HasPrefix(key, baggerMove) {
 		// If we are checking baggerMove key, we should look into all the
 		// levels, so we can pick up the newer versions, which might have been
 		// compacted down the tree.
-		maxVs = &butils.ValueStruct{}
+		maxVs = &bval.ValueStruct{}
 		version = bkey.ParseVersion(key)
 	}
 
@@ -557,7 +558,7 @@ func (db *DB) writeToLSM(b *request) error {
 		}
 		if db.shouldWriteValueToLSM(*entry) { // Will include deletion / tombstone case.
 			db.mt.Put(entry.Key,
-				butils.ValueStruct{
+				bval.ValueStruct{
 					Value:     entry.Value,
 					Meta:      entry.meta,
 					UserMeta:  entry.UserMeta,
@@ -566,7 +567,7 @@ func (db *DB) writeToLSM(b *request) error {
 		} else {
 			var offsetBuf [vptrSize]byte
 			db.mt.Put(entry.Key,
-				butils.ValueStruct{
+				bval.ValueStruct{
 					Value:     b.Ptrs[i].Encode(offsetBuf[:]),
 					Meta:      entry.meta | bitValuePointer,
 					UserMeta:  entry.UserMeta,
@@ -816,7 +817,7 @@ func (db *DB) handleFlushTask(ft flushTask) error {
 		// Pick the max commit ts, so in case of crash, our read ts would be higher than all the
 		// commits.
 		headVersion := bkey.KeyWithVersion(head, db.orc.nextVersion())
-		ft.mt.Put(headVersion, butils.ValueStruct{Value: offset})
+		ft.mt.Put(headVersion, bval.ValueStruct{Value: offset})
 	}
 
 	fileID := db.lc.reserveFileID()

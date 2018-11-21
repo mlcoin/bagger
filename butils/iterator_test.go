@@ -22,6 +22,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"github.com/bigbagger/bagger/bkey"
+	"github.com/bigbagger/bagger/bval"
 )
 
 type SimpleIterator struct {
@@ -54,22 +56,22 @@ func (s *SimpleIterator) Rewind() {
 }
 
 func (s *SimpleIterator) Seek(key []byte) {
-	key = KeyWithTs(key, 0)
+	key = bkey.KeyWithVersion(key, 0)
 	if !s.reversed {
 		s.idx = sort.Search(len(s.keys), func(i int) bool {
-			return CompareKeys(s.keys[i], key) >= 0
+			return bkey.CompareKeys(s.keys[i], key) >= 0
 		})
 	} else {
 		n := len(s.keys)
 		s.idx = n - 1 - sort.Search(n, func(i int) bool {
-			return CompareKeys(s.keys[n-1-i], key) <= 0
+			return bkey.CompareKeys(s.keys[n-1-i], key) <= 0
 		})
 	}
 }
 
 func (s *SimpleIterator) Key() []byte { return s.keys[s.idx] }
-func (s *SimpleIterator) Value() ValueStruct {
-	return ValueStruct{
+func (s *SimpleIterator) Value() bval.ValueStruct {
+	return bval.ValueStruct{
 		Value:    s.vals[s.idx],
 		UserMeta: 55,
 		Meta:     0,
@@ -84,7 +86,7 @@ func newSimpleIterator(keys []string, vals []string, reversed bool) *SimpleItera
 	v := make([][]byte, len(vals))
 	AssertTrue(len(keys) == len(vals))
 	for i := 0; i < len(keys); i++ {
-		k[i] = KeyWithTs([]byte(keys[i]), 0)
+		k[i] = bkey.KeyWithVersion([]byte(keys[i]), 0)
 		v[i] = []byte(vals[i])
 	}
 	return &SimpleIterator{
@@ -99,7 +101,7 @@ func getAll(it Iterator) ([]string, []string) {
 	var keys, vals []string
 	for ; it.Valid(); it.Next() {
 		k := it.Key()
-		keys = append(keys, string(ParseKey(k)))
+		keys = append(keys, string(bkey.ParseKey(k)))
 		v := it.Value()
 		vals = append(vals, string(v.Value))
 	}

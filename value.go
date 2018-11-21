@@ -40,6 +40,7 @@ import (
 	"github.com/pkg/errors"
 	"golang.org/x/net/trace"
 	"github.com/bigbagger/bagger/bkey"
+	"github.com/bigbagger/bagger/bval"
 )
 
 // Values have their first byte being byteData or byteDelete. This helps us distinguish between
@@ -1078,7 +1079,7 @@ func (vlog *valueLog) pickLog(head valuePointer, tr trace.Trace) (files []*logFi
 	return files
 }
 
-func discardEntry(e Entry, vs butils.ValueStruct) bool {
+func discardEntry(e Entry, vs bval.ValueStruct) bool {
 	if vs.Version != bkey.ParseVersion(e.Key) {
 		// Version not found. Discard.
 		return true

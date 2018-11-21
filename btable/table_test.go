@@ -27,6 +27,8 @@ import (
 	"github.com/bigbagger/bagger/boptions"
 	"github.com/bigbagger/bagger/butils"
 	"github.com/stretchr/testify/require"
+	"github.com/bigbagger/bagger/bval"
+	"github.com/bigbagger/bagger/bkey"
 )
 
 func key(prefix string, i int) string {
@@ -63,7 +65,7 @@ func buildTable(t *testing.T, keyValues [][]string) *os.File {
 	})
 	for _, kv := range keyValues {
 		butils.AssertTrue(len(kv) == 2)
-		err := b.Add(bkey.KeyWithTs([]byte(kv[0]), 0), butils.ValueStruct{Value: []byte(kv[1]), Meta: 'A', UserMeta: 0})
+		err := b.Add(bkey.KeyWithVersion([]byte(kv[0]), 0), bval.ValueStruct{Value: []byte(kv[1]), Meta: 'A', UserMeta: 0})
 		if t != nil {
 			require.NoError(t, err)
 		} else {
@@ -88,7 +90,7 @@ func TestTableIterator(t *testing.T) {
 			count := 0
 			for it.Rewind(); it.Valid(); it.Next() {
 				v := it.Value()
-				k := bkey.KeyWithTs([]byte(key("key", count)), 0)
+				k := bkey.KeyWithVersion([]byte(key("key", count)), 0)
 				require.EqualValues(t, k, it.Key())
 				require.EqualValues(t, fmt.Sprintf("%d", count), string(v.Value))
 				count++
@@ -163,7 +165,7 @@ func TestSeek(t *testing.T) {
 	}
 
 	for _, tt := range data {
-		it.seek(bkey.KeyWithTs([]byte(tt.in), 0))
+		it.seek(bkey.KeyWithVersion([]byte(tt.in), 0))
 		if !tt.valid {
 			require.False(t, it.Valid())
 			continue
@@ -198,7 +200,7 @@ func TestSeekForPrev(t *testing.T) {
 	}
 
 	for _, tt := range data {
-		it.seekForPrev(bkey.KeyWithTs([]byte(tt.in), 0))
+		it.seekForPrev(bkey.KeyWithVersion([]byte(tt.in), 0))
 		if !tt.valid {
 			require.False(t, it.Valid())
 			continue
@@ -247,7 +249,7 @@ func TestIterateFromEnd(t *testing.T) {
 			ti := table.NewIterator(false)
 			defer ti.Close()
 			ti.reset()
-			ti.seek(bkey.KeyWithTs([]byte("zzzzzz"), 0)) // Seek to end, an invalid element.
+			ti.seek(bkey.KeyWithVersion([]byte("zzzzzz"), 0)) // Seek to end, an invalid element.
 			require.False(t, ti.Valid())
 			for i := n - 1; i >= 0; i-- {
 				ti.prev()
@@ -270,7 +272,7 @@ func TestTable(t *testing.T) {
 	ti := table.NewIterator(false)
 	defer ti.Close()
 	kid := 1010
-	seek := bkey.KeyWithTs([]byte(key("key", kid)), 0)
+	seek := bkey.KeyWithVersion([]byte(key("key", kid)), 0)
 	for ti.seek(seek); ti.Valid(); ti.next() {
 		k := ti.Key()
 		require.EqualValues(t, string(bkey.ParseKey(k)), key("key", kid))
@@ -280,10 +282,10 @@ func TestTable(t *testing.T) {
 		t.Errorf("Expected kid: 10000. Got: %v", kid)
 	}
 
-	ti.seek(bkey.KeyWithTs([]byte(key("key", 99999)), 0))
+	ti.seek(bkey.KeyWithVersion([]byte(key("key", 99999)), 0))
 	require.False(t, ti.Valid())
 
-	ti.seek(bkey.KeyWithTs([]byte(key("key", -1)), 0))
+	ti.seek(bkey.KeyWithVersion([]byte(key("key", -1)), 0))
 	require.True(t, ti.Valid())
 	k := ti.Key()
 	require.EqualValues(t, string(bkey.ParseKey(k)), key("key", 0))
@@ -295,7 +297,7 @@ func TestIterateBackAndForth(t *testing.T) {
 	require.NoError(t, err)
 	defer table.DecrRef()
 
-	seek := bkey.KeyWithTs([]byte(key("key", 1010)), 0)
+	seek := bkey.KeyWithVersion([]byte(key("key", 1010)), 0)
 	it := table.NewIterator(false)
 	defer it.Close()
 	it.seek(seek)
@@ -315,7 +317,7 @@ func TestIterateBackAndForth(t *testing.T) {
 	k = it.Key()
 	require.EqualValues(t, key("key", 1010), bkey.ParseKey(k))
 
-	it.seek(bkey.KeyWithTs([]byte(key("key", 2000)), 0))
+	it.seek(bkey.KeyWithVersion([]byte(key("key", 2000)), 0))
 	require.True(t, it.Valid())
 	k = it.Key()
 	require.EqualValues(t, key("key", 2000), bkey.ParseKey(k))
@@ -412,22 +414,22 @@ func TestConcatIterator(t *testing.T) {
 		}
 		require.EqualValues(t, 30000, count)
 
-		it.Seek(bkey.KeyWithTs([]byte("a"), 0))
+		it.Seek(bkey.KeyWithVersion([]byte("a"), 0))
 		require.EqualValues(t, "keya0000", string(bkey.ParseKey(it.Key())))
 		vs := it.Value()
 		require.EqualValues(t, "0", string(vs.Value))
 
-		it.Seek(bkey.KeyWithTs([]byte("keyb"), 0))
+		it.Seek(bkey.KeyWithVersion([]byte("keyb"), 0))
 		require.EqualValues(t, "keyb0000", string(bkey.ParseKey(it.Key())))
 		vs = it.Value()
 		require.EqualValues(t, "0", string(vs.Value))
 
-		it.Seek(bkey.KeyWithTs([]byte("keyb9999b"), 0))
+		it.Seek(bkey.KeyWithVersion([]byte("keyb9999b"), 0))
 		require.EqualValues(t, "keyc0000", string(bkey.ParseKey(it.Key())))
 		vs = it.Value()
 		require.EqualValues(t, "0", string(vs.Value))
 
-		it.Seek(bkey.KeyWithTs([]byte("keyd"), 0))
+		it.Seek(bkey.KeyWithVersion([]byte("keyd"), 0))
 		require.False(t, it.Valid())
 	}
 	{
@@ -444,20 +446,20 @@ func TestConcatIterator(t *testing.T) {
 		}
 		require.EqualValues(t, 30000, count)
 
-		it.Seek(bkey.KeyWithTs([]byte("a"), 0))
+		it.Seek(bkey.KeyWithVersion([]byte("a"), 0))
 		require.False(t, it.Valid())
 
-		it.Seek(bkey.KeyWithTs([]byte("keyb"), 0))
+		it.Seek(bkey.KeyWithVersion([]byte("keyb"), 0))
 		require.EqualValues(t, "keya9999", string(bkey.ParseKey(it.Key())))
 		vs := it.Value()
 		require.EqualValues(t, "9999", string(vs.Value))
 
-		it.Seek(bkey.KeyWithTs([]byte("keyb9999b"), 0))
+		it.Seek(bkey.KeyWithVersion([]byte("keyb9999b"), 0))
 		require.EqualValues(t, "keyb9999", string(bkey.ParseKey(it.Key())))
 		vs = it.Value()
 		require.EqualValues(t, "9999", string(vs.Value))
 
-		it.Seek(bkey.KeyWithTs([]byte("keyd"), 0))
+		it.Seek(bkey.KeyWithVersion([]byte("keyd"), 0))
 		require.EqualValues(t, "keyc9999", string(bkey.ParseKey(it.Key())))
 		vs = it.Value()
 		require.EqualValues(t, "9999", string(vs.Value))
@@ -633,7 +635,7 @@ func BenchmarkRead(b *testing.B) {
 	for i := 0; i < n; i++ {
 		k := fmt.Sprintf("%016x", i)
 		v := fmt.Sprintf("%d", i)
-		butils.Check(builder.Add([]byte(k), butils.ValueStruct{Value: []byte(v), Meta: 123, UserMeta: 0}))
+		butils.Check(builder.Add([]byte(k), bval.ValueStruct{Value: []byte(v), Meta: 123, UserMeta: 0}))
 	}
 
 	f.Write(builder.Finish())
@@ -663,7 +665,7 @@ func BenchmarkReadAndBuild(b *testing.B) {
 	for i := 0; i < n; i++ {
 		k := fmt.Sprintf("%016x", i)
 		v := fmt.Sprintf("%d", i)
-		butils.Check(builder.Add([]byte(k), butils.ValueStruct{Value: []byte(v), Meta: 123, UserMeta: 0}))
+		butils.Check(builder.Add([]byte(k), bval.ValueStruct{Value: []byte(v), Meta: 123, UserMeta: 0}))
 	}
 
 	f.Write(builder.Finish())
@@ -704,7 +706,7 @@ func BenchmarkReadMerged(b *testing.B) {
 			// id := i*tableSize+j (not interleaved)
 			k := fmt.Sprintf("%016x", id)
 			v := fmt.Sprintf("%d", id)
-			butils.Check(builder.Add([]byte(k), butils.ValueStruct{Value: []byte(v), Meta: 123, UserMeta: 0}))
+			butils.Check(builder.Add([]byte(k), bval.ValueStruct{Value: []byte(v), Meta: 123, UserMeta: 0}))
 		}
 		f.Write(builder.Finish())
 		tbl, err := OpenTable(f, boptions.MemoryMap)

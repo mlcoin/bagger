@@ -41,6 +41,7 @@ import (
 
 	"github.com/bigbagger/bagger/butils"
 	"github.com/bigbagger/bagger/bkey"
+	"github.com/bigbagger/bagger/bval"
 )
 
 const (
@@ -103,7 +104,7 @@ func (s *Skiplist) DecrRef() {
 
 func (s *Skiplist) valid() bool { return s.arena != nil }
 
-func newNode(arena *Arena, key []byte, v butils.ValueStruct, height int) *node {
+func newNode(arena *Arena, key []byte, v bval.ValueStruct, height int) *node {
 	// The base level is already allocated in the node struct.
 	offset := arena.putNode(height)
 	node := arena.getNode(offset)
@@ -127,7 +128,7 @@ func decodeValue(value uint64) (valOffset uint32, valSize uint16) {
 // NewSkiplist makes a new empty skiplist, with a given arena size
 func NewSkiplist(arenaSize int64) *Skiplist {
 	arena := newArena(arenaSize)
-	head := newNode(arena, nil, butils.ValueStruct{}, maxHeight)
+	head := newNode(arena, nil, bval.ValueStruct{}, maxHeight)
 	return &Skiplist{
 		height: 1,
 		head:   head,
@@ -145,7 +146,7 @@ func (s *node) key(arena *Arena) []byte {
 	return arena.getKey(s.keyOffset, s.keySize)
 }
 
-func (s *node) setValue(arena *Arena, v butils.ValueStruct) {
+func (s *node) setValue(arena *Arena, v bval.ValueStruct) {
 	valOffset := arena.putVal(v)
 	value := encodeValue(valOffset, v.EncodedSize())
 	atomic.StoreUint64(&s.value, value)
@@ -282,7 +283,7 @@ func (s *Skiplist) getHeight() int32 {
 }
 
 // Put inserts the key-value pair.
-func (s *Skiplist) Put(key []byte, v butils.ValueStruct) {
+func (s *Skiplist) Put(key []byte, v bval.ValueStruct) {
 	// Since we allow overwrite, we may not need to create a new node. We might not even need to
 	// increase the height. Let's defer these actions.
 
@@ -374,15 +375,15 @@ func (s *Skiplist) findLast() *node {
 
 // Get gets the value associated with the key. It returns a valid value if it finds equal or earlier
 // version of the same key.
-func (s *Skiplist) Get(key []byte) butils.ValueStruct {
+func (s *Skiplist) Get(key []byte) bval.ValueStruct {
 	n, _ := s.findNear(key, false, true) // findGreaterOrEqual.
 	if n == nil {
-		return butils.ValueStruct{}
+		return bval.ValueStruct{}
 	}
 
 	nextKey := s.arena.getKey(n.keyOffset, n.keySize)
 	if !bkey.SameKey(key, nextKey) {
-		return butils.ValueStruct{}
+		return bval.ValueStruct{}
 	}
 
 	valOffset, valSize := n.getValueOffset()
@@ -423,7 +424,7 @@ func (s *Iterator) Key() []byte {
 }
 
 // Value returns value.
-func (s *Iterator) Value() butils.ValueStruct {
+func (s *Iterator) Value() bval.ValueStruct {
 	valOffset, valSize := s.n.getValueOffset()
 	return s.list.arena.getVal(valOffset, valSize)
 }
@@ -509,7 +510,7 @@ func (s *UniIterator) Seek(key []byte) {
 func (s *UniIterator) Key() []byte { return s.iter.Key() }
 
 // Value implements butils.Interface
-func (s *UniIterator) Value() butils.ValueStruct { return s.iter.Value() }
+func (s *UniIterator) Value() bval.ValueStruct { return s.iter.Value() }
 
 // Valid implements butils.Interface
 func (s *UniIterator) Valid() bool { return s.iter.Valid() }

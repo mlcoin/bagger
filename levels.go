@@ -32,6 +32,7 @@ import (
 	"github.com/bigbagger/bagger/butils"
 	"github.com/pkg/errors"
 	"github.com/bigbagger/bagger/bkey"
+	"github.com/bigbagger/bagger/bval"
 )
 
 type levelsController struct {
@@ -342,7 +343,7 @@ func (s *levelsController) compactBuildTables(
 	// Try to collect stats so that we can inform value log about GC. That would help us find which
 	// value log file should be GCed.
 	discardStats := make(map[uint32]int64)
-	updateStats := func(vs butils.ValueStruct) {
+	updateStats := func(vs bval.ValueStruct) {
 		if vs.Meta&bitValuePointer > 0 {
 			var vp valuePointer
 			vp.Decode(vs.Value)
@@ -773,7 +774,7 @@ func (s *levelsController) close() error {
 }
 
 // get returns the found value if any. If not found, we return nil.
-func (s *levelsController) get(key []byte, maxVs *butils.ValueStruct) (butils.ValueStruct, error) {
+func (s *levelsController) get(key []byte, maxVs *bval.ValueStruct) (bval.ValueStruct, error) {
 	// It's important that we iterate the levels from 0 on upward.  The reason is, if we iterated
 	// in opposite order, or in parallel (naively calling all the h.RLock() in some order) we could
 	// read level L's tables post-compaction and level L+1's tables pre-compaction.  (If we do
@@ -783,7 +784,7 @@ func (s *levelsController) get(key []byte, maxVs *butils.ValueStruct) (butils.Va
 	for _, h := range s.levels {
 		vs, err := h.get(key) // Calls h.RLock() and h.RUnlock().
 		if err != nil {
-			return butils.ValueStruct{}, errors.Wrapf(err, "get key: %q", key)
+			return bval.ValueStruct{}, errors.Wrapf(err, "get key: %q", key)
 		}
 		if vs.Value == nil && vs.Meta == 0 {
 			continue
@@ -798,7 +799,7 @@ func (s *levelsController) get(key []byte, maxVs *butils.ValueStruct) (butils.Va
 	if maxVs != nil {
 		return *maxVs, nil
 	}
-	return butils.ValueStruct{}, nil
+	return bval.ValueStruct{}, nil
 }
 
 func appendIteratorsReversed(out []butils.Iterator, th []*btable.Table, reversed bool) []butils.Iterator {

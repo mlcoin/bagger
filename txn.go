@@ -32,6 +32,7 @@ import (
 	farm "github.com/dgryski/go-farm"
 	"github.com/pkg/errors"
 	"github.com/bigbagger/bagger/bkey"
+	"github.com/bigbagger/bagger/bval"
 )
 
 type oracle struct {
@@ -238,10 +239,10 @@ func (pi *pendingWritesIterator) Key() []byte {
 	return bkey.KeyWithVersion(entry.Key, pi.readVersion)
 }
 
-func (pi *pendingWritesIterator) Value() butils.ValueStruct {
+func (pi *pendingWritesIterator) Value() bval.ValueStruct {
 	butils.AssertTrue(pi.Valid())
 	entry := pi.entries[pi.nextIdx]
-	return butils.ValueStruct{
+	return bval.ValueStruct{
 		Value:     entry.Value,
 		Meta:      entry.meta,
 		UserMeta:  entry.UserMeta,

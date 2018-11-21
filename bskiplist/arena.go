@@ -22,6 +22,7 @@ import (
 	"unsafe"
 
 	"github.com/bigbagger/bagger/butils"
+	"github.com/bigbagger/bagger/bval"
 )
 
 const (
@@ -82,7 +83,7 @@ func (s *Arena) putNode(height int) uint32 {
 // val buffer. Returns an offset into buf. User is responsible for remembering
 // size of val. We could also store this size inside arena but the encoding and
 // decoding will incur some overhead.
-func (s *Arena) putVal(v butils.ValueStruct) uint32 {
+func (s *Arena) putVal(v bval.ValueStruct) uint32 {
 	l := uint32(v.EncodedSize())
 	n := atomic.AddUint32(&s.n, l)
 	butils.AssertTruef(int(n) <= len(s.buf),
@@ -121,7 +122,7 @@ func (s *Arena) getKey(offset uint32, size uint16) []byte {
 
 // getVal returns byte slice at offset. The given size should be just the value
 // size and should NOT include the meta bytes.
-func (s *Arena) getVal(offset uint32, size uint16) (ret butils.ValueStruct) {
+func (s *Arena) getVal(offset uint32, size uint16) (ret bval.ValueStruct) {
 	ret.Decode(s.buf[offset : offset+uint32(size)])
 	return
 }

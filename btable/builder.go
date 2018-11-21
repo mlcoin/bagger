@@ -26,6 +26,7 @@ import (
 	"github.com/AndreasBriese/bbloom"
 	"github.com/bigbagger/bagger/butils"
 	"github.com/bigbagger/bagger/bkey"
+	"github.com/bigbagger/bagger/bval"
 )
 
 var (
@@ -110,7 +111,7 @@ func (b Builder) keyDiff(newKey []byte) []byte {
 	return newKey[i:]
 }
 
-func (b *Builder) addHelper(key []byte, v butils.ValueStruct) {
+func (b *Builder) addHelper(key []byte, v bval.ValueStruct) {
 	// Add key to bloom filter.
 	if len(key) > 0 {
 		var klen [2]byte
@@ -153,12 +154,12 @@ func (b *Builder) addHelper(key []byte, v butils.ValueStruct) {
 func (b *Builder) finishBlock() {
 	// When we are at the end of the block and Valid=false, and the user wants to do a Prev,
 	// we need a dummy header to tell us the offset of the previous key-value pair.
-	b.addHelper([]byte{}, butils.ValueStruct{})
+	b.addHelper([]byte{}, bval.ValueStruct{})
 }
 
 // Add adds a key-value pair to the block.
 // If doNotRestart is true, we will not restart even if b.counter >= restartInterval.
-func (b *Builder) Add(key []byte, value butils.ValueStruct) error {
+func (b *Builder) Add(key []byte, value bval.ValueStruct) error {
 	if b.counter >= restartInterval {
 		b.finishBlock()
 		// Start a new block. Initialize the block.

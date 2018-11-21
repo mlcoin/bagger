@@ -26,6 +26,7 @@ import (
 	"github.com/bigbagger/bagger/butils"
 	"github.com/pkg/errors"
 	"github.com/bigbagger/bagger/bkey"
+	"github.com/bigbagger/bagger/bval"
 )
 
 type levelHandler struct {
@@ -237,11 +238,11 @@ func (s *levelHandler) getTableForKey(key []byte) ([]*btable.Table, func() error
 }
 
 // get returns value for a given key or the key after that. If not found, return nil.
-func (s *levelHandler) get(key []byte) (butils.ValueStruct, error) {
+func (s *levelHandler) get(key []byte) (bval.ValueStruct, error) {
 	tables, decr := s.getTableForKey(key)
 	keyNoVersion := bkey.ParseKey(key)
 
-	var maxVs butils.ValueStruct
+	var maxVs bval.ValueStruct
 	for _, th := range tables {
 		if th.DoesNotHave(keyNoVersion) {
 			butils.NumLSMBloomHits.Add(s.strLevel, 1)

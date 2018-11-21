@@ -26,6 +26,7 @@ import (
 	"github.com/bigbagger/bagger/butils"
 	"github.com/pkg/errors"
 	"github.com/bigbagger/bagger/bkey"
+	"github.com/bigbagger/bagger/bval"
 )
 
 type blockIterator struct {
@@ -390,7 +391,7 @@ func (itr *Iterator) Key() []byte {
 }
 
 // Value follows the butils.Iterator interface
-func (itr *Iterator) Value() (ret butils.ValueStruct) {
+func (itr *Iterator) Value() (ret bval.ValueStruct) {
 	ret.Decode(itr.bi.Value())
 	return
 }
@@ -479,7 +480,7 @@ func (s *ConcatIterator) Key() []byte {
 }
 
 // Value implements butils.Interface
-func (s *ConcatIterator) Value() butils.ValueStruct {
+func (s *ConcatIterator) Value() bval.ValueStruct {
 	return s.cur.Value()
 }
 

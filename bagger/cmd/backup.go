@@ -21,7 +21,7 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
-	"bagger"
+	"github.com/bigbagger/bagger"
 )
 
 var backupFile string
