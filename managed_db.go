@@ -47,7 +47,7 @@ func (db *DB) NewTransactionAt(readTs uint64, update bool) *Txn {
 		panic("Cannot use NewTransactionAt with managedDB=false. Use NewTransaction instead.")
 	}
 	txn := db.newTransaction(update, true)
-	txn.readTs = readTs
+	txn.readVersion = readTs
 	return txn
 }
 
@@ -60,7 +60,7 @@ func (txn *Txn) CommitAt(commitTs uint64, callback func(error)) error {
 	if !txn.db.opt.managedTxns {
 		panic("Cannot use CommitAt with managedDB=false. Use Commit instead.")
 	}
-	txn.commitTs = commitTs
+	txn.commitVersion = commitTs
 	if callback == nil {
 		return txn.Commit()
 	}
@@ -75,7 +75,7 @@ func (db *DB) SetDiscardTs(ts uint64) {
 	if !db.opt.managedTxns {
 		panic("Cannot use SetDiscardTs with managedDB=false.")
 	}
-	db.orc.setDiscardTs(ts)
+	db.orc.setDiscardVersion(ts)
 }
 
 var errDone = errors.New("Done deleting keys")

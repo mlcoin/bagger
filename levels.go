@@ -369,7 +369,7 @@ func (s *levelsController) compactBuildTables(
 	// Pick a discard ts, so we can discard versions below this ts. We should
 	// never discard any versions starting from above this timestamp, because
 	// that would affect the snapshot view guarantee provided by transactions.
-	discardTs := s.kv.orc.discardAtOrBelow()
+	discardVersion := s.kv.orc.discardAtOrBelow()
 
 	// Start generating new tables.
 	type newTableResult struct {
@@ -408,7 +408,7 @@ func (s *levelsController) compactBuildTables(
 
 			vs := it.Value()
 			version := bkey.ParseVersion(it.Key())
-			if version <= discardTs {
+			if version <= discardVersion {
 				// Keep track of the number of versions encountered for this key. Only consider the
 				// versions which are below the minReadTs, otherwise, we might end up discarding the
 				// only valid version for a running transaction.
@@ -418,7 +418,7 @@ func (s *levelsController) compactBuildTables(
 					numVersions > s.kv.opt.NumVersionsToKeep ||
 					lastValidVersion {
 					// If this version of the key is deleted or expired, skip all the rest of the
-					// versions. Ensure that we're only removing versions below readTs.
+					// versions. Ensure that we're only removing versions below readVersion.
 					skipKey = butils.SafeCopy(skipKey, it.Key())
 
 					if lastValidVersion {

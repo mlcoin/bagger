@@ -114,10 +114,10 @@ func (b *Builder) addHelper(key []byte, v butils.ValueStruct) {
 	// Add key to bloom filter.
 	if len(key) > 0 {
 		var klen [2]byte
-		keyNoTs := bkey.ParseKey(key)
-		binary.BigEndian.PutUint16(klen[:], uint16(len(keyNoTs)))
+		keyNoVersion := bkey.ParseKey(key)
+		binary.BigEndian.PutUint16(klen[:], uint16(len(keyNoVersion)))
 		b.keyBuf.Write(klen[:])
-		b.keyBuf.Write(keyNoTs)
+		b.keyBuf.Write(keyNoVersion)
 		b.keyCount++
 	}
 

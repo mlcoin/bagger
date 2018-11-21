@@ -239,11 +239,11 @@ func (s *levelHandler) getTableForKey(key []byte) ([]*btable.Table, func() error
 // get returns value for a given key or the key after that. If not found, return nil.
 func (s *levelHandler) get(key []byte) (butils.ValueStruct, error) {
 	tables, decr := s.getTableForKey(key)
-	keyNoTs := bkey.ParseKey(key)
+	keyNoVersion := bkey.ParseKey(key)
 
 	var maxVs butils.ValueStruct
 	for _, th := range tables {
-		if th.DoesNotHave(keyNoTs) {
+		if th.DoesNotHave(keyNoVersion) {
 			butils.NumLSMBloomHits.Add(s.strLevel, 1)
 			continue
 		}

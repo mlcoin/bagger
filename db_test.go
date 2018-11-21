@@ -1532,7 +1532,7 @@ func TestMinReadTs(t *testing.T) {
 		time.Sleep(time.Millisecond)
 
 		readTxn0 := db.NewTransaction(false)
-		require.Equal(t, uint64(10), readTxn0.readTs)
+		require.Equal(t, uint64(10), readTxn0.readVersion)
 
 		min := db.orc.readMark.DoneUntil()
 		require.Equal(t, uint64(9), min)
@@ -1552,7 +1552,7 @@ func TestMinReadTs(t *testing.T) {
 		readTxn.Discard()
 		time.Sleep(time.Millisecond)
 		require.Equal(t, uint64(19), db.orc.readMark.DoneUntil())
-		db.orc.readMark.Done(uint64(20)) // Because we called readTs.
+		db.orc.readMark.Done(uint64(20)) // Because we called readVersion.
 
 		for i := 0; i < 10; i++ {
 			db.View(func(txn *Txn) error {

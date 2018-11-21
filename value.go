@@ -300,11 +300,11 @@ func (vlog *valueLog) iterate(lf *logFile, offset uint32, fn logEntry) (uint32, 
 		vp.Fid = lf.fid
 
 		if e.meta&bitTxn > 0 {
-			txnTs := bkey.ParseVersion(e.Key)
+			txnVersion := bkey.ParseVersion(e.Key)
 			if lastCommit == 0 {
-				lastCommit = txnTs
+				lastCommit = txnVersion
 			}
-			if lastCommit != txnTs {
+			if lastCommit != txnVersion {
 				break
 			}
 

@@ -210,7 +210,7 @@ func TestTxnVersions(t *testing.T) {
 
 		for i := 1; i < 10; i++ {
 			txn := db.NewTransaction(true)
-			txn.readTs = uint64(i) // Read version at i.
+			txn.readVersion = uint64(i) // Read version at i.
 
 			item, err := txn.Get(k)
 			require.NoError(t, err)
@@ -369,7 +369,7 @@ func TestTxnIterationEdgeCase(t *testing.T) {
 				item := itr.Item()
 				val, err := item.ValueCopy(nil)
 				require.NoError(t, err)
-				require.Equal(t, expected[i], string(val), "readts=%d", itr.readTs)
+				require.Equal(t, expected[i], string(val), "readts=%d", itr.readVersion)
 				i++
 			}
 			require.Equal(t, len(expected), i)
@@ -389,19 +389,19 @@ func TestTxnIterationEdgeCase(t *testing.T) {
 		checkIterator(itr, []string{"c2", "a3"})
 		checkIterator(itr5, []string{"b4", "a3"})
 
-		txn.readTs = 3
+		txn.readVersion = 3
 		itr = txn.NewIterator(DefaultIteratorOptions)
 		checkIterator(itr, []string{"a3", "b3", "c2"})
 		itr = txn.NewIterator(rev)
 		checkIterator(itr, []string{"c2", "b3", "a3"})
 
-		txn.readTs = 2
+		txn.readVersion = 2
 		itr = txn.NewIterator(DefaultIteratorOptions)
 		checkIterator(itr, []string{"a2", "c2"})
 		itr = txn.NewIterator(rev)
 		checkIterator(itr, []string{"c2", "a2"})
 
-		txn.readTs = 1
+		txn.readVersion = 1
 		itr = txn.NewIterator(DefaultIteratorOptions)
 		checkIterator(itr, []string{"c1"})
 		itr = txn.NewIterator(rev)
@@ -453,7 +453,7 @@ func TestTxnIterationEdgeCase2(t *testing.T) {
 				item := itr.Item()
 				val, err := item.ValueCopy(nil)
 				require.NoError(t, err)
-				require.Equal(t, expected[i], string(val), "readts=%d", itr.readTs)
+				require.Equal(t, expected[i], string(val), "readts=%d", itr.readVersion)
 				i++
 			}
 			require.Equal(t, len(expected), i)
@@ -468,7 +468,7 @@ func TestTxnIterationEdgeCase2(t *testing.T) {
 		itr = txn.NewIterator(rev)
 		checkIterator(itr, []string{"c2", "a3"})
 
-		txn.readTs = 5
+		txn.readVersion = 5
 		itr = txn.NewIterator(DefaultIteratorOptions)
 		itr.Seek(ka)
 		require.True(t, itr.Valid())
@@ -487,19 +487,19 @@ func TestTxnIterationEdgeCase2(t *testing.T) {
 		require.Equal(t, itr.item.Key(), kc)
 		itr.Close()
 
-		txn.readTs = 3
+		txn.readVersion = 3
 		itr = txn.NewIterator(DefaultIteratorOptions)
 		checkIterator(itr, []string{"a3", "b3", "c2"})
 		itr = txn.NewIterator(rev)
 		checkIterator(itr, []string{"c2", "b3", "a3"})
 
-		txn.readTs = 2
+		txn.readVersion = 2
 		itr = txn.NewIterator(DefaultIteratorOptions)
 		checkIterator(itr, []string{"a2", "c2"})
 		itr = txn.NewIterator(rev)
 		checkIterator(itr, []string{"c2", "a2"})
 
-		txn.readTs = 1
+		txn.readVersion = 1
 		itr = txn.NewIterator(DefaultIteratorOptions)
 		checkIterator(itr, []string{"c1"})
 		itr = txn.NewIterator(rev)

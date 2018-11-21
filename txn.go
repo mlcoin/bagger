@@ -39,19 +39,19 @@ type oracle struct {
 	refCount  int64
 	isManaged bool // Does not change value, so no locking required.
 
-	sync.Mutex // For nextTxnTs and commits.
+	sync.Mutex // For nextTxnVersion and commits.
 	// writeChLock lock is for ensuring that transactions go to the write
 	// channel in the same order as their commit timestamps.
-	writeChLock sync.Mutex
-	nextTxnTs   uint64
+	writeChLock    sync.Mutex
+	nextTxnVersion uint64
 
 	// Used to block NewTransaction, so all previous commits are visible to a new read.
 	txnMark *butils.WaterMark
 
 	// Either of these is used to determine which versions can be permanently
 	// discarded during compaction.
-	discardTs uint64            // Used by ManagedDB.
-	readMark  *butils.WaterMark // Used by DB.
+	discardVersion uint64            // Used by ManagedDB.
+	readMark       *butils.WaterMark // Used by DB.
 
 	// commits stores a key fingerprint and latest commit counter for it.
 	// refCount is used to clear out commits map to avoid a memory blowup.
@@ -62,7 +62,7 @@ func newOracle(opt Options) *oracle {
 	orc := &oracle{
 		isManaged: opt.managedTxns,
 		commits:   make(map[uint64]uint64),
-		// We're not initializing nextTxnTs and readOnlyTs. It would be done after replay in Open.
+		// We're not initializing nextTxnVersion and readOnlyTs. It would be done after replay in Open.
 		//
 		// WaterMarks must be 64-bit aligned for atomic package, hence we must use pointers here.
 		// See https://golang.org/pkg/sync/atomic/#pkg-note-BUG.
@@ -101,39 +101,39 @@ func (o *oracle) readTs() uint64 {
 		panic("ReadTs should not be retrieved for managed DB")
 	}
 
-	var readTs uint64
+	var readVersion uint64
 	o.Lock()
-	readTs = o.nextTxnTs - 1
-	o.readMark.Begin(readTs)
+	readVersion = o.nextTxnVersion - 1
+	o.readMark.Begin(readVersion)
 	o.Unlock()
 
 	// Wait for all txns which have no conflicts, have been assigned a commit
 	// timestamp and are going through the write to value log and LSM tree
 	// process. Not waiting here could mean that some txns which have been
 	// committed would not be read.
-	butils.Check(o.txnMark.WaitForMark(context.Background(), readTs))
-	return readTs
+	butils.Check(o.txnMark.WaitForMark(context.Background(), readVersion))
+	return readVersion
 }
 
-func (o *oracle) nextTs() uint64 {
+func (o *oracle) nextVersion() uint64 {
 	o.Lock()
 	defer o.Unlock()
-	return o.nextTxnTs
+	return o.nextTxnVersion
 }
 
 // Any deleted or invalid versions at or below ts would be discarded during
 // compaction to reclaim disk space in LSM tree and thence value log.
-func (o *oracle) setDiscardTs(ts uint64) {
+func (o *oracle) setDiscardVersion(version uint64) {
 	o.Lock()
 	defer o.Unlock()
-	o.discardTs = ts
+	o.discardVersion = version
 }
 
 func (o *oracle) discardAtOrBelow() uint64 {
 	if o.isManaged {
 		o.Lock()
 		defer o.Unlock()
-		return o.discardTs
+		return o.discardVersion
 	}
 	return o.readMark.DoneUntil()
 }
@@ -146,14 +146,14 @@ func (o *oracle) hasConflict(txn *Txn) bool {
 	for _, ro := range txn.reads {
 		// A commit at the read timestamp is expected.
 		// But, any commit after the read timestamp should cause a conflict.
-		if ts, has := o.commits[ro]; has && ts > txn.readTs {
+		if ts, has := o.commits[ro]; has && ts > txn.readVersion {
 			return true
 		}
 	}
 	return false
 }
 
-func (o *oracle) newCommitTs(txn *Txn) uint64 {
+func (o *oracle) newCommitVersion(txn *Txn) uint64 {
 	o.Lock()
 	defer o.Unlock()
 
@@ -163,34 +163,34 @@ func (o *oracle) newCommitTs(txn *Txn) uint64 {
 
 	var ts uint64
 	if !o.isManaged {
-		// This is the general case, when user doesn't specify the read and commit ts.
-		ts = o.nextTxnTs
-		o.nextTxnTs++
+		// This is the general case, when user doesn't specify the read and commit version.
+		ts = o.nextTxnVersion
+		o.nextTxnVersion++
 		o.txnMark.Begin(ts)
 
 	} else {
-		// If commitTs is set, use it instead.
-		ts = txn.commitTs
+		// If commitVersion is set, use it instead.
+		ts = txn.commitVersion
 	}
 
 	for _, w := range txn.writes {
-		o.commits[w] = ts // Update the commitTs.
+		o.commits[w] = ts // Update the commitVersion.
 	}
 	return ts
 }
 
-func (o *oracle) doneCommit(cts uint64) {
+func (o *oracle) doneCommit(cversion uint64) {
 	if o.isManaged {
 		// No need to update anything.
 		return
 	}
-	o.txnMark.Done(cts)
+	o.txnMark.Done(cversion)
 }
 
 // Txn represents a Bagger transaction.
 type Txn struct {
-	readTs   uint64
-	commitTs uint64
+	readVersion   uint64
+	commitVersion uint64
 
 	update bool     // update is used to conditionally keep track of reads.
 	reads  []uint64 // contains fingerprints of keys read.
@@ -207,10 +207,10 @@ type Txn struct {
 }
 
 type pendingWritesIterator struct {
-	entries  []*Entry
-	nextIdx  int
-	readTs   uint64
-	reversed bool
+	entries     []*Entry
+	nextIdx     int
+	readVersion uint64
+	reversed    bool
 }
 
 func (pi *pendingWritesIterator) Next() {
@@ -235,7 +235,7 @@ func (pi *pendingWritesIterator) Seek(key []byte) {
 func (pi *pendingWritesIterator) Key() []byte {
 	butils.AssertTrue(pi.Valid())
 	entry := pi.entries[pi.nextIdx]
-	return bkey.KeyWithVersion(entry.Key, pi.readTs)
+	return bkey.KeyWithVersion(entry.Key, pi.readVersion)
 }
 
 func (pi *pendingWritesIterator) Value() butils.ValueStruct {
@@ -246,7 +246,7 @@ func (pi *pendingWritesIterator) Value() butils.ValueStruct {
 		Meta:      entry.meta,
 		UserMeta:  entry.UserMeta,
 		ExpiresAt: entry.ExpiresAt,
-		Version:   pi.readTs,
+		Version:   pi.readVersion,
 	}
 }
 
@@ -275,9 +275,9 @@ func (txn *Txn) newPendingWritesIterator(reversed bool) *pendingWritesIterator {
 		return cmp > 0
 	})
 	return &pendingWritesIterator{
-		readTs:   txn.readTs,
-		entries:  entries,
-		reversed: reversed,
+		readVersion: txn.readVersion,
+		entries:     entries,
+		reversed:    reversed,
 	}
 }
 
@@ -439,7 +439,7 @@ func (txn *Txn) Get(key []byte) (item *Item, rerr error) {
 			item.userMeta = e.UserMeta
 			item.key = key
 			item.status = prefetched
-			item.version = txn.readTs
+			item.version = txn.readVersion
 			item.expiresAt = e.ExpiresAt
 			// We probably don't need to set db on item here.
 			return item, nil
@@ -449,7 +449,7 @@ func (txn *Txn) Get(key []byte) (item *Item, rerr error) {
 		txn.addReadKey(key)
 	}
 
-	seek := bkey.KeyWithVersion(key, txn.readTs)
+	seek := bkey.KeyWithVersion(key, txn.readVersion)
 	vs, err := txn.db.get(seek)
 	if err != nil {
 		return nil, errors.Wrapf(err, "DB::Get key: %q", key)
@@ -493,7 +493,7 @@ func (txn *Txn) Discard() {
 	}
 	txn.discarded = true
 	if !txn.db.orc.isManaged {
-		txn.db.orc.readMark.Done(txn.readTs)
+		txn.db.orc.readMark.Done(txn.readVersion)
 	}
 	if txn.update {
 		txn.db.orc.decrRef()
@@ -509,8 +509,8 @@ func (txn *Txn) commitAndSend() (func() error, error) {
 	orc.writeChLock.Lock()
 	defer orc.writeChLock.Unlock()
 
-	commitTs := orc.newCommitTs(txn)
-	if commitTs == 0 {
+	commitVersion := orc.newCommitVersion(txn)
+	if commitVersion == 0 {
 		return nil, ErrConflict
 	}
 
@@ -519,43 +519,43 @@ func (txn *Txn) commitAndSend() (func() error, error) {
 	// down to here. So, keep this around for at least a couple of months.
 	// var b strings.Builder
 	// fmt.Fprintf(&b, "Read: %d. Commit: %d. reads: %v. writes: %v. Keys: ",
-	// 	txn.readTs, commitTs, txn.reads, txn.writes)
+	// 	txn.readVersion, commitVersion, txn.reads, txn.writes)
 	entries := make([]*Entry, 0, len(txn.pendingWrites)+1)
 	for _, e := range txn.pendingWrites {
 		// fmt.Fprintf(&b, "[%q : %q], ", e.Key, e.Value)
 
 		// Suffix the keys with commit ts, so the key versions are sorted in
 		// descending order of commit timestamp.
-		e.Key = bkey.KeyWithVersion(e.Key, commitTs)
+		e.Key = bkey.KeyWithVersion(e.Key, commitVersion)
 		e.meta |= bitTxn
 		entries = append(entries, e)
 	}
 	// log.Printf("%s\n", b.String())
 	e := &Entry{
-		Key:   bkey.KeyWithVersion(txnKey, commitTs),
-		Value: []byte(strconv.FormatUint(commitTs, 10)),
+		Key:   bkey.KeyWithVersion(txnKey, commitVersion),
+		Value: []byte(strconv.FormatUint(commitVersion, 10)),
 		meta:  bitFinTxn,
 	}
 	entries = append(entries, e)
 
 	req, err := txn.db.sendToWriteCh(entries)
 	if err != nil {
-		orc.doneCommit(commitTs)
+		orc.doneCommit(commitVersion)
 		return nil, err
 	}
 	ret := func() error {
 		err := req.Wait()
-		// Wait before marking commitTs as done.
+		// Wait before marking commitVersion as done.
 		// We can't defer doneCommit above, because it is being called from a
 		// callback here.
-		orc.doneCommit(commitTs)
+		orc.doneCommit(commitVersion)
 		return err
 	}
 	return ret, nil
 }
 
 func (txn *Txn) commitPrecheck() {
-	if txn.commitTs == 0 && txn.db.opt.managedTxns {
+	if txn.commitVersion == 0 && txn.db.opt.managedTxns {
 		panic("Commit cannot be called with managedDB=true. Use CommitAt.")
 	}
 	if txn.discarded {
@@ -653,7 +653,7 @@ func (txn *Txn) CommitWith(cb func(error)) {
 
 // ReadTs returns the read timestamp of the transaction.
 func (txn *Txn) ReadTs() uint64 {
-	return txn.readTs
+	return txn.readVersion
 }
 
 // NewTransaction creates a new transaction. Bagger supports concurrent execution of transactions,
@@ -709,7 +709,7 @@ func (db *DB) newTransaction(update, isManaged bool) *Txn {
 	//    would be detected.
 	// See issue: https://github.com/bigbagger/bagger/issues/574
 	if !isManaged {
-		txn.readTs = db.orc.readTs()
+		txn.readVersion = db.orc.readTs()
 	}
 	return txn
 }

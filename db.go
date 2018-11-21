@@ -107,8 +107,8 @@ func (out *DB) replayFunction() func(Entry, valuePointer) error {
 		}
 		first = false
 
-		if out.orc.nextTxnTs < bkey.ParseVersion(e.Key) {
-			out.orc.nextTxnTs = bkey.ParseVersion(e.Key)
+		if out.orc.nextTxnVersion < bkey.ParseVersion(e.Key) {
+			out.orc.nextTxnVersion = bkey.ParseVersion(e.Key)
 		}
 
 		nk := make([]byte, len(e.Key))
@@ -145,14 +145,14 @@ func (out *DB) replayFunction() func(Entry, valuePointer) error {
 			lastCommit = 0
 
 		} else if e.meta&bitTxn > 0 {
-			txnTs := bkey.ParseVersion(nk)
+			txnVersion := bkey.ParseVersion(nk)
 			if lastCommit == 0 {
-				lastCommit = txnTs
+				lastCommit = txnVersion
 			}
-			if lastCommit != txnTs {
-				Warningf("Found an incomplete txn at timestamp %d. Discarding it.\n", lastCommit)
+			if lastCommit != txnVersion {
+				Warningf("Found an incomplete txn at version %d. Discarding it.\n", lastCommit)
 				txn = txn[:0]
-				lastCommit = txnTs
+				lastCommit = txnVersion
 			}
 			te := txnEntry{nk: nk, v: v}
 			txn = append(txn, te)
@@ -277,12 +277,12 @@ func Open(opt Options) (db *DB, err error) {
 	}
 
 	headKey := bkey.KeyWithVersion(head, math.MaxUint64)
-	// Need to pass with timestamp, lsm get removes the last 8 bytes and compares key
+	// Need to pass with version, lsm get removes the last 8 bytes and compares key
 	vs, err := db.get(headKey)
 	if err != nil {
 		return nil, errors.Wrap(err, "Retrieving head")
 	}
-	db.orc.nextTxnTs = vs.Version
+	db.orc.nextTxnVersion = vs.Version
 	var vptr valuePointer
 	if len(vs.Value) > 0 {
 		vptr.Decode(vs.Value)
@@ -296,10 +296,10 @@ func Open(opt Options) (db *DB, err error) {
 	}
 	replayCloser.SignalAndWait() // Wait for replay to be applied first.
 
-	// Let's advance nextTxnTs to one more than whatever we observed via
+	// Let's advance nextTxnVersion to one more than whatever we observed via
 	// replaying the logs.
-	db.orc.txnMark.Done(db.orc.nextTxnTs)
-	db.orc.nextTxnTs++
+	db.orc.txnMark.Done(db.orc.nextTxnVersion)
+	db.orc.nextTxnVersion++
 
 	db.writeCh = make(chan *request, kvWriteChCapacity)
 	db.closers.writes = butils.NewCloser(1)
@@ -808,15 +808,15 @@ type flushTask struct {
 // handleFlushTask must be run serially.
 func (db *DB) handleFlushTask(ft flushTask) error {
 	if !ft.mt.Empty() {
-		// Store bagger head even if vptr is zero, need it for readTs
+		// Store bagger head even if vptr is zero, need it for readVersion
 		db.elog.Printf("Storing offset: %+v\n", ft.vptr)
 		offset := make([]byte, vptrSize)
 		ft.vptr.Encode(offset)
 
 		// Pick the max commit ts, so in case of crash, our read ts would be higher than all the
 		// commits.
-		headTs := bkey.KeyWithVersion(head, db.orc.nextTs())
-		ft.mt.Put(headTs, butils.ValueStruct{Value: offset})
+		headVersion := bkey.KeyWithVersion(head, db.orc.nextVersion())
+		ft.mt.Put(headVersion, butils.ValueStruct{Value: offset})
 	}
 
 	fileID := db.lc.reserveFileID()

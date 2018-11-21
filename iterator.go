@@ -336,9 +336,9 @@ var DefaultIteratorOptions = IteratorOptions{
 
 // Iterator helps iterating over the KV pairs in a lexicographically sorted order.
 type Iterator struct {
-	iitr   *butils.MergeIterator
-	txn    *Txn
-	readTs uint64
+	iitr        *butils.MergeIterator
+	txn         *Txn
+	readVersion uint64
 
 	opt   IteratorOptions
 	item  *Item
@@ -379,10 +379,10 @@ func (txn *Txn) NewIterator(opt IteratorOptions) *Iterator {
 	}
 	iters = txn.db.lc.appendIterators(iters, opt.Reverse) // This will increment references.
 	res := &Iterator{
-		txn:    txn,
-		iitr:   butils.NewMergeIterator(iters, opt.Reverse),
-		opt:    opt,
-		readTs: txn.readTs,
+		txn:         txn,
+		iitr:        butils.NewMergeIterator(iters, opt.Reverse),
+		opt:         opt,
+		readVersion: txn.readVersion,
 	}
 	return res
 }
@@ -490,9 +490,9 @@ func (it *Iterator) parseItem() bool {
 		return false
 	}
 
-	// Skip any versions which are beyond the readTs.
+	// Skip any versions which are beyond the readVersion.
 	version := bkey.ParseVersion(key)
-	if version > it.readTs {
+	if version > it.readVersion {
 		mi.Next()
 		return false
 	}
@@ -542,9 +542,9 @@ FILL:
 	}
 
 	// Reverse direction.
-	nextTs := bkey.ParseVersion(mi.Key())
+	nextVersion := bkey.ParseVersion(mi.Key())
 	mik := bkey.ParseKey(mi.Key())
-	if nextTs <= it.readTs && bytes.Equal(mik, item.key) {
+	if nextVersion <= it.readVersion && bytes.Equal(mik, item.key) {
 		// This is a valid potential candidate.
 		goto FILL
 	}
@@ -611,7 +611,7 @@ func (it *Iterator) Seek(key []byte) {
 	}
 
 	if !it.opt.Reverse {
-		key = bkey.KeyWithVersion(key, it.txn.readTs)
+		key = bkey.KeyWithVersion(key, it.txn.readVersion)
 	} else {
 		key = bkey.KeyWithVersion(key, 0)
 	}

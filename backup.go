@@ -80,7 +80,7 @@ func (db *DB) Backup(w io.Writer, since uint64) (uint64, error) {
 				return err
 			}
 		}
-		tsNew = txn.readTs
+		tsNew = txn.readVersion
 		return nil
 	})
 	return tsNew, err
@@ -144,10 +144,10 @@ func (db *DB) Load(r io.Reader) error {
 			UserMeta:  e.UserMeta[0],
 			ExpiresAt: e.ExpiresAt,
 		})
-		// Update nextTxnTs, memtable stores this timestamp in bagger head
+		// Update nextTxnVersion, memtable stores this version in bagger head
 		// when flushed.
-		if e.Version >= db.orc.nextTxnTs {
-			db.orc.nextTxnTs = e.Version + 1
+		if e.Version >= db.orc.nextTxnVersion {
+			db.orc.nextTxnVersion = e.Version + 1
 		}
 
 		if len(entries) == 1000 {
@@ -169,8 +169,8 @@ func (db *DB) Load(r io.Reader) error {
 	case err := <-errChan:
 		return err
 	default:
-		// Mark all versions done up until nextTxnTs.
-		db.orc.txnMark.Done(db.orc.nextTxnTs - 1)
+		// Mark all versions done up until nextTxnVersion.
+		db.orc.txnMark.Done(db.orc.nextTxnVersion - 1)
 		return nil
 	}
 }

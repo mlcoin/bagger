@@ -114,7 +114,7 @@ func (wb *WriteBatch) commit() error {
 	wb.wg.Add(1)
 	wb.txn.CommitWith(wb.callback)
 	wb.txn = wb.db.newTransaction(true, true)
-	wb.txn.readTs = 0 // We're not reading anything.
+	wb.txn.readVersion = 0 // We're not reading anything.
 	return wb.err
 }
 
