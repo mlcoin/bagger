@@ -31,6 +31,7 @@ import (
 	"github.com/bigbagger/bagger/butils"
 
 	"github.com/stretchr/testify/require"
+	"github.com/bigbagger/bagger/bkey"
 )
 
 func TestTxnSimple(t *testing.T) {
@@ -632,7 +633,7 @@ func TestIteratorAllVersionsWithDeleted(t *testing.T) {
 			require.NoError(t, err)
 			err = txn.db.batchSet([]*Entry{
 				{
-					Key:  butils.KeyWithTs(item.key, item.version),
+					Key:  bkey.KeyWithTs(item.key, item.version),
 					meta: bitDelete,
 				},
 			})

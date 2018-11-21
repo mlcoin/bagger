@@ -26,6 +26,7 @@ import (
 	"github.com/bigbagger/bagger/btable"
 	"github.com/bigbagger/bagger/butils"
 	"github.com/pkg/errors"
+	"github.com/bigbagger/bagger/bkey"
 )
 
 // summary is produced when DB is closed. Currently it is used only for testing.
@@ -76,13 +77,13 @@ func (s *levelHandler) validate() error {
 			return errors.Errorf("Level %d, j=%d numTables=%d", s.level, j, numTables)
 		}
 
-		if butils.CompareKeys(s.tables[j-1].Biggest(), s.tables[j].Smallest()) >= 0 {
+		if bkey.CompareKeys(s.tables[j-1].Biggest(), s.tables[j].Smallest()) >= 0 {
 			return errors.Errorf(
 				"Inter: %q vs %q: level=%d j=%d numTables=%d",
 				string(s.tables[j-1].Biggest()), string(s.tables[j].Smallest()), s.level, j, numTables)
 		}
 
-		if butils.CompareKeys(s.tables[j].Smallest(), s.tables[j].Biggest()) > 0 {
+		if bkey.CompareKeys(s.tables[j].Smallest(), s.tables[j].Biggest()) > 0 {
 			return errors.Errorf(
 				"Intra: %q vs %q: level=%d j=%d numTables=%d",
 				s.tables[j].Smallest(), s.tables[j].Biggest(), s.level, j, numTables)

@@ -31,6 +31,7 @@ import (
 	"github.com/bigbagger/bagger/btable"
 	"github.com/bigbagger/bagger/butils"
 	"github.com/pkg/errors"
+	"github.com/bigbagger/bagger/bkey"
 )
 
 type levelsController struct {
@@ -385,7 +386,7 @@ func (s *levelsController) compactBuildTables(
 		for ; it.Valid(); it.Next() {
 			// See if we need to skip this key.
 			if len(skipKey) > 0 {
-				if butils.SameKey(it.Key(), skipKey) {
+				if bkey.SameKey(it.Key(), skipKey) {
 					numSkips++
 					updateStats(it.Value())
 					continue
@@ -394,7 +395,7 @@ func (s *levelsController) compactBuildTables(
 				}
 			}
 
-			if !butils.SameKey(it.Key(), lastKey) {
+			if !bkey.SameKey(it.Key(), lastKey) {
 				if builder.ReachedCapacity(s.kv.opt.MaxTableSize) {
 					// Only break if we are on a different key, and have reached capacity. We want
 					// to ensure that all versions of the key are stored in the same sstable, and
@@ -406,7 +407,7 @@ func (s *levelsController) compactBuildTables(
 			}
 
 			vs := it.Value()
-			version := butils.ParseTs(it.Key())
+			version := bkey.ParseTs(it.Key())
 			if version <= discardTs {
 				// Keep track of the number of versions encountered for this key. Only consider the
 				// versions which are below the minReadTs, otherwise, we might end up discarding the
@@ -497,7 +498,7 @@ func (s *levelsController) compactBuildTables(
 	}
 
 	sort.Slice(newTables, func(i, j int) bool {
-		return butils.CompareKeys(newTables[i].Biggest(), newTables[j].Biggest()) < 0
+		return bkey.CompareKeys(newTables[i].Biggest(), newTables[j].Biggest()) < 0
 	})
 	s.kv.vlog.updateGCStats(discardStats)
 	cd.elog.LazyPrintf("Discard stats: %v", discardStats)
@@ -592,9 +593,9 @@ func (s *levelsController) fillTables(cd *compactDef) bool {
 		cd.thisSize = t.Size()
 		cd.thisRange = keyRange{
 			// We pick all the versions of the smallest and the biggest key.
-			left: butils.KeyWithTs(butils.ParseKey(t.Smallest()), math.MaxUint64),
+			left: bkey.KeyWithTs(bkey.ParseKey(t.Smallest()), math.MaxUint64),
 			// Note that version zero would be the rightmost key.
-			right: butils.KeyWithTs(butils.ParseKey(t.Biggest()), 0),
+			right: bkey.KeyWithTs(bkey.ParseKey(t.Biggest()), 0),
 		}
 		if s.cstatus.overlapsWith(cd.thisLevel.level, cd.thisRange) {
 			continue
@@ -778,7 +779,7 @@ func (s *levelsController) get(key []byte, maxVs *butils.ValueStruct) (butils.Va
 	// read level L's tables post-compaction and level L+1's tables pre-compaction.  (If we do
 	// parallelize this, we will need to call the h.RLock() function by increasing order of level
 	// number.)
-	version := butils.ParseTs(key)
+	version := bkey.ParseTs(key)
 	for _, h := range s.levels {
 		vs, err := h.get(key) // Calls h.RLock() and h.RUnlock().
 		if err != nil {

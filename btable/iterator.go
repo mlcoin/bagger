@@ -25,6 +25,7 @@ import (
 
 	"github.com/bigbagger/bagger/butils"
 	"github.com/pkg/errors"
+	"github.com/bigbagger/bagger/bkey"
 )
 
 type blockIterator struct {
@@ -84,7 +85,7 @@ func (itr *blockIterator) Seek(key []byte, whence int) {
 	var done bool
 	for itr.Init(); itr.Valid(); itr.Next() {
 		k := itr.Key()
-		if butils.CompareKeys(k, key) >= 0 {
+		if bkey.CompareKeys(k, key) >= 0 {
 			// We are done as k is >= key.
 			done = true
 			break
@@ -283,7 +284,7 @@ func (itr *Iterator) seekFrom(key []byte, whence int) {
 
 	idx := sort.Search(len(itr.t.blockIndex), func(idx int) bool {
 		ko := itr.t.blockIndex[idx]
-		return butils.CompareKeys(ko.key, key) > 0
+		return bkey.CompareKeys(ko.key, key) > 0
 	})
 	if idx == 0 {
 		// The smallest key in our btable is already strictly > key. We can return that.
@@ -487,12 +488,12 @@ func (s *ConcatIterator) Seek(key []byte) {
 	var idx int
 	if !s.reversed {
 		idx = sort.Search(len(s.tables), func(i int) bool {
-			return butils.CompareKeys(s.tables[i].Biggest(), key) >= 0
+			return bkey.CompareKeys(s.tables[i].Biggest(), key) >= 0
 		})
 	} else {
 		n := len(s.tables)
 		idx = n - 1 - sort.Search(n, func(i int) bool {
-			return butils.CompareKeys(s.tables[n-1-i].Smallest(), key) <= 0
+			return bkey.CompareKeys(s.tables[n-1-i].Smallest(), key) <= 0
 		})
 	}
 	if idx >= len(s.tables) || idx < 0 {

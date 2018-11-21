@@ -40,6 +40,7 @@ import (
 	"unsafe"
 
 	"github.com/bigbagger/bagger/butils"
+	"github.com/bigbagger/bagger/bkey"
 )
 
 const (
@@ -162,7 +163,7 @@ func (s *node) casNextOffset(h int, old, val uint32) bool {
 // If n is nil, this is an "end" marker and we return false.
 //func (s *Skiplist) keyIsAfterNode(key []byte, n *node) bool {
 //	butils.AssertTrue(n != s.head)
-//	return n != nil && butils.CompareKeys(key, n.key) > 0
+//	return n != nil && bkey.CompareKeys(key, n.key) > 0
 //}
 
 func randomHeight() int {
@@ -208,7 +209,7 @@ func (s *Skiplist) findNear(key []byte, less bool, allowEqual bool) (*node, bool
 		}
 
 		nextKey := next.key(s.arena)
-		cmp := butils.CompareKeys(key, nextKey)
+		cmp := bkey.CompareKeys(key, nextKey)
 		if cmp > 0 {
 			// x.key < next.key < key. We can continue to move right.
 			x = next
@@ -263,7 +264,7 @@ func (s *Skiplist) findSpliceForLevel(key []byte, before *node, level int) (*nod
 			return before, next
 		}
 		nextKey := next.key(s.arena)
-		cmp := butils.CompareKeys(key, nextKey)
+		cmp := bkey.CompareKeys(key, nextKey)
 		if cmp == 0 {
 			// Equality case.
 			return next, next
@@ -380,13 +381,13 @@ func (s *Skiplist) Get(key []byte) butils.ValueStruct {
 	}
 
 	nextKey := s.arena.getKey(n.keyOffset, n.keySize)
-	if !butils.SameKey(key, nextKey) {
+	if !bkey.SameKey(key, nextKey) {
 		return butils.ValueStruct{}
 	}
 
 	valOffset, valSize := n.getValueOffset()
 	vs := s.arena.getVal(valOffset, valSize)
-	vs.Version = butils.ParseTs(nextKey)
+	vs.Version = bkey.ParseTs(nextKey)
 	return vs
 }
 

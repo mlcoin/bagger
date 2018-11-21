@@ -25,6 +25,7 @@ import (
 
 	"github.com/AndreasBriese/bbloom"
 	"github.com/bigbagger/bagger/butils"
+	"github.com/bigbagger/bagger/bkey"
 )
 
 var (
@@ -113,7 +114,7 @@ func (b *Builder) addHelper(key []byte, v butils.ValueStruct) {
 	// Add key to bloom filter.
 	if len(key) > 0 {
 		var klen [2]byte
-		keyNoTs := butils.ParseKey(key)
+		keyNoTs := bkey.ParseKey(key)
 		binary.BigEndian.PutUint16(klen[:], uint16(len(keyNoTs)))
 		b.keyBuf.Write(klen[:])
 		b.keyBuf.Write(keyNoTs)

@@ -33,6 +33,7 @@ import (
 	"github.com/bigbagger/bagger/btable"
 	"github.com/bigbagger/bagger/butils"
 	"github.com/stretchr/testify/require"
+	"github.com/bigbagger/bagger/bkey"
 )
 
 func TestManifestBasic(t *testing.T) {
@@ -140,7 +141,7 @@ func buildTable(t *testing.T, keyValues [][]string) *os.File {
 	})
 	for _, kv := range keyValues {
 		butils.AssertTrue(len(kv) == 2)
-		err := b.Add(butils.KeyWithTs([]byte(kv[0]), 10), butils.ValueStruct{
+		err := b.Add(bkey.KeyWithTs([]byte(kv[0]), 10), butils.ValueStruct{
 			Value:    []byte(kv[1]),
 			Meta:     'A',
 			UserMeta: 0,

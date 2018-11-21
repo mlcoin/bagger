@@ -31,6 +31,7 @@ import (
 	"github.com/bigbagger/bagger/butils"
 	farm "github.com/dgryski/go-farm"
 	"github.com/pkg/errors"
+	"github.com/bigbagger/bagger/bkey"
 )
 
 type oracle struct {
@@ -221,7 +222,7 @@ func (pi *pendingWritesIterator) Rewind() {
 }
 
 func (pi *pendingWritesIterator) Seek(key []byte) {
-	key = butils.ParseKey(key)
+	key = bkey.ParseKey(key)
 	pi.nextIdx = sort.Search(len(pi.entries), func(idx int) bool {
 		cmp := bytes.Compare(pi.entries[idx].Key, key)
 		if !pi.reversed {
@@ -234,7 +235,7 @@ func (pi *pendingWritesIterator) Seek(key []byte) {
 func (pi *pendingWritesIterator) Key() []byte {
 	butils.AssertTrue(pi.Valid())
 	entry := pi.entries[pi.nextIdx]
-	return butils.KeyWithTs(entry.Key, pi.readTs)
+	return bkey.KeyWithTs(entry.Key, pi.readTs)
 }
 
 func (pi *pendingWritesIterator) Value() butils.ValueStruct {
@@ -448,7 +449,7 @@ func (txn *Txn) Get(key []byte) (item *Item, rerr error) {
 		txn.addReadKey(key)
 	}
 
-	seek := butils.KeyWithTs(key, txn.readTs)
+	seek := bkey.KeyWithTs(key, txn.readTs)
 	vs, err := txn.db.get(seek)
 	if err != nil {
 		return nil, errors.Wrapf(err, "DB::Get key: %q", key)
@@ -525,13 +526,13 @@ func (txn *Txn) commitAndSend() (func() error, error) {
 
 		// Suffix the keys with commit ts, so the key versions are sorted in
 		// descending order of commit timestamp.
-		e.Key = butils.KeyWithTs(e.Key, commitTs)
+		e.Key = bkey.KeyWithTs(e.Key, commitTs)
 		e.meta |= bitTxn
 		entries = append(entries, e)
 	}
 	// log.Printf("%s\n", b.String())
 	e := &Entry{
-		Key:   butils.KeyWithTs(txnKey, commitTs),
+		Key:   bkey.KeyWithTs(txnKey, commitTs),
 		Value: []byte(strconv.FormatUint(commitTs, 10)),
 		meta:  bitFinTxn,
 	}

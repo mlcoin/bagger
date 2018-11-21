@@ -39,6 +39,7 @@ import (
 	"github.com/bigbagger/bagger/butils"
 	"github.com/pkg/errors"
 	"golang.org/x/net/trace"
+	"github.com/bigbagger/bagger/bkey"
 )
 
 // Values have their first byte being byteData or byteDelete. This helps us distinguish between
@@ -299,7 +300,7 @@ func (vlog *valueLog) iterate(lf *logFile, offset uint32, fn logEntry) (uint32, 
 		vp.Fid = lf.fid
 
 		if e.meta&bitTxn > 0 {
-			txnTs := butils.ParseTs(e.Key)
+			txnTs := bkey.ParseTs(e.Key)
 			if lastCommit == 0 {
 				lastCommit = txnTs
 			}
@@ -488,7 +489,7 @@ func (vlog *valueLog) deleteMoveKeysFor(fid uint32, tr trace.Trace) error {
 			var vp valuePointer
 			vp.Decode(item.vptr)
 			if vp.Fid == fid {
-				e := &Entry{Key: butils.KeyWithTs(item.Key(), item.Version()), meta: bitDelete}
+				e := &Entry{Key: bkey.KeyWithTs(item.Key(), item.Version()), meta: bitDelete}
 				result = append(result, e)
 			}
 		}
@@ -1078,7 +1079,7 @@ func (vlog *valueLog) pickLog(head valuePointer, tr trace.Trace) (files []*logFi
 }
 
 func discardEntry(e Entry, vs butils.ValueStruct) bool {
-	if vs.Version != butils.ParseTs(e.Key) {
+	if vs.Version != bkey.ParseTs(e.Key) {
 		// Version not found. Discard.
 		return true
 	}

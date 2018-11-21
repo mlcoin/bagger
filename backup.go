@@ -25,6 +25,7 @@ import (
 
 	"github.com/bigbagger/bagger/bprotos"
 	"github.com/bigbagger/bagger/butils"
+	"github.com/bigbagger/bagger/bkey"
 )
 
 func writeTo(entry *bprotos.KVPair, w io.Writer) error {
@@ -138,7 +139,7 @@ func (db *DB) Load(r io.Reader) error {
 			return err
 		}
 		entries = append(entries, &Entry{
-			Key:       butils.KeyWithTs(e.Key, e.Version),
+			Key:       bkey.KeyWithTs(e.Key, e.Version),
 			Value:     e.Value,
 			UserMeta:  e.UserMeta[0],
 			ExpiresAt: e.ExpiresAt,

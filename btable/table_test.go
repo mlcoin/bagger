@@ -63,7 +63,7 @@ func buildTable(t *testing.T, keyValues [][]string) *os.File {
 	})
 	for _, kv := range keyValues {
 		butils.AssertTrue(len(kv) == 2)
-		err := b.Add(butils.KeyWithTs([]byte(kv[0]), 0), butils.ValueStruct{Value: []byte(kv[1]), Meta: 'A', UserMeta: 0})
+		err := b.Add(bkey.KeyWithTs([]byte(kv[0]), 0), butils.ValueStruct{Value: []byte(kv[1]), Meta: 'A', UserMeta: 0})
 		if t != nil {
 			require.NoError(t, err)
 		} else {
@@ -88,7 +88,7 @@ func TestTableIterator(t *testing.T) {
 			count := 0
 			for it.Rewind(); it.Valid(); it.Next() {
 				v := it.Value()
-				k := butils.KeyWithTs([]byte(key("key", count)), 0)
+				k := bkey.KeyWithTs([]byte(key("key", count)), 0)
 				require.EqualValues(t, k, it.Key())
 				require.EqualValues(t, fmt.Sprintf("%d", count), string(v.Value))
 				count++
@@ -163,14 +163,14 @@ func TestSeek(t *testing.T) {
 	}
 
 	for _, tt := range data {
-		it.seek(butils.KeyWithTs([]byte(tt.in), 0))
+		it.seek(bkey.KeyWithTs([]byte(tt.in), 0))
 		if !tt.valid {
 			require.False(t, it.Valid())
 			continue
 		}
 		require.True(t, it.Valid())
 		k := it.Key()
-		require.EqualValues(t, tt.out, string(butils.ParseKey(k)))
+		require.EqualValues(t, tt.out, string(bkey.ParseKey(k)))
 	}
 }
 
@@ -198,14 +198,14 @@ func TestSeekForPrev(t *testing.T) {
 	}
 
 	for _, tt := range data {
-		it.seekForPrev(butils.KeyWithTs([]byte(tt.in), 0))
+		it.seekForPrev(bkey.KeyWithTs([]byte(tt.in), 0))
 		if !tt.valid {
 			require.False(t, it.Valid())
 			continue
 		}
 		require.True(t, it.Valid())
 		k := it.Key()
-		require.EqualValues(t, tt.out, string(butils.ParseKey(k)))
+		require.EqualValues(t, tt.out, string(bkey.ParseKey(k)))
 	}
 }
 
@@ -247,7 +247,7 @@ func TestIterateFromEnd(t *testing.T) {
 			ti := table.NewIterator(false)
 			defer ti.Close()
 			ti.reset()
-			ti.seek(butils.KeyWithTs([]byte("zzzzzz"), 0)) // Seek to end, an invalid element.
+			ti.seek(bkey.KeyWithTs([]byte("zzzzzz"), 0)) // Seek to end, an invalid element.
 			require.False(t, ti.Valid())
 			for i := n - 1; i >= 0; i-- {
 				ti.prev()
@@ -270,23 +270,23 @@ func TestTable(t *testing.T) {
 	ti := table.NewIterator(false)
 	defer ti.Close()
 	kid := 1010
-	seek := butils.KeyWithTs([]byte(key("key", kid)), 0)
+	seek := bkey.KeyWithTs([]byte(key("key", kid)), 0)
 	for ti.seek(seek); ti.Valid(); ti.next() {
 		k := ti.Key()
-		require.EqualValues(t, string(butils.ParseKey(k)), key("key", kid))
+		require.EqualValues(t, string(bkey.ParseKey(k)), key("key", kid))
 		kid++
 	}
 	if kid != 10000 {
 		t.Errorf("Expected kid: 10000. Got: %v", kid)
 	}
 
-	ti.seek(butils.KeyWithTs([]byte(key("key", 99999)), 0))
+	ti.seek(bkey.KeyWithTs([]byte(key("key", 99999)), 0))
 	require.False(t, ti.Valid())
 
-	ti.seek(butils.KeyWithTs([]byte(key("key", -1)), 0))
+	ti.seek(bkey.KeyWithTs([]byte(key("key", -1)), 0))
 	require.True(t, ti.Valid())
 	k := ti.Key()
-	require.EqualValues(t, string(butils.ParseKey(k)), key("key", 0))
+	require.EqualValues(t, string(bkey.ParseKey(k)), key("key", 0))
 }
 
 func TestIterateBackAndForth(t *testing.T) {
@@ -295,7 +295,7 @@ func TestIterateBackAndForth(t *testing.T) {
 	require.NoError(t, err)
 	defer table.DecrRef()
 
-	seek := butils.KeyWithTs([]byte(key("key", 1010)), 0)
+	seek := bkey.KeyWithTs([]byte(key("key", 1010)), 0)
 	it := table.NewIterator(false)
 	defer it.Close()
 	it.seek(seek)
@@ -307,27 +307,27 @@ func TestIterateBackAndForth(t *testing.T) {
 	it.prev()
 	require.True(t, it.Valid())
 	k = it.Key()
-	require.EqualValues(t, key("key", 1008), string(butils.ParseKey(k)))
+	require.EqualValues(t, key("key", 1008), string(bkey.ParseKey(k)))
 
 	it.next()
 	it.next()
 	require.True(t, it.Valid())
 	k = it.Key()
-	require.EqualValues(t, key("key", 1010), butils.ParseKey(k))
+	require.EqualValues(t, key("key", 1010), bkey.ParseKey(k))
 
-	it.seek(butils.KeyWithTs([]byte(key("key", 2000)), 0))
+	it.seek(bkey.KeyWithTs([]byte(key("key", 2000)), 0))
 	require.True(t, it.Valid())
 	k = it.Key()
-	require.EqualValues(t, key("key", 2000), butils.ParseKey(k))
+	require.EqualValues(t, key("key", 2000), bkey.ParseKey(k))
 
 	it.prev()
 	require.True(t, it.Valid())
 	k = it.Key()
-	require.EqualValues(t, key("key", 1999), butils.ParseKey(k))
+	require.EqualValues(t, key("key", 1999), bkey.ParseKey(k))
 
 	it.seekToFirst()
 	k = it.Key()
-	require.EqualValues(t, key("key", 0), butils.ParseKey(k))
+	require.EqualValues(t, key("key", 0), bkey.ParseKey(k))
 }
 
 func TestUniIterator(t *testing.T) {
@@ -378,7 +378,7 @@ func TestConcatIteratorOneTable(t *testing.T) {
 	it.Rewind()
 	require.True(t, it.Valid())
 	k := it.Key()
-	require.EqualValues(t, "k1", string(butils.ParseKey(k)))
+	require.EqualValues(t, "k1", string(bkey.ParseKey(k)))
 	vs := it.Value()
 	require.EqualValues(t, "a1", string(vs.Value))
 	require.EqualValues(t, 'A', vs.Meta)
@@ -412,22 +412,22 @@ func TestConcatIterator(t *testing.T) {
 		}
 		require.EqualValues(t, 30000, count)
 
-		it.Seek(butils.KeyWithTs([]byte("a"), 0))
-		require.EqualValues(t, "keya0000", string(butils.ParseKey(it.Key())))
+		it.Seek(bkey.KeyWithTs([]byte("a"), 0))
+		require.EqualValues(t, "keya0000", string(bkey.ParseKey(it.Key())))
 		vs := it.Value()
 		require.EqualValues(t, "0", string(vs.Value))
 
-		it.Seek(butils.KeyWithTs([]byte("keyb"), 0))
-		require.EqualValues(t, "keyb0000", string(butils.ParseKey(it.Key())))
+		it.Seek(bkey.KeyWithTs([]byte("keyb"), 0))
+		require.EqualValues(t, "keyb0000", string(bkey.ParseKey(it.Key())))
 		vs = it.Value()
 		require.EqualValues(t, "0", string(vs.Value))
 
-		it.Seek(butils.KeyWithTs([]byte("keyb9999b"), 0))
-		require.EqualValues(t, "keyc0000", string(butils.ParseKey(it.Key())))
+		it.Seek(bkey.KeyWithTs([]byte("keyb9999b"), 0))
+		require.EqualValues(t, "keyc0000", string(bkey.ParseKey(it.Key())))
 		vs = it.Value()
 		require.EqualValues(t, "0", string(vs.Value))
 
-		it.Seek(butils.KeyWithTs([]byte("keyd"), 0))
+		it.Seek(bkey.KeyWithTs([]byte("keyd"), 0))
 		require.False(t, it.Valid())
 	}
 	{
@@ -444,21 +444,21 @@ func TestConcatIterator(t *testing.T) {
 		}
 		require.EqualValues(t, 30000, count)
 
-		it.Seek(butils.KeyWithTs([]byte("a"), 0))
+		it.Seek(bkey.KeyWithTs([]byte("a"), 0))
 		require.False(t, it.Valid())
 
-		it.Seek(butils.KeyWithTs([]byte("keyb"), 0))
-		require.EqualValues(t, "keya9999", string(butils.ParseKey(it.Key())))
+		it.Seek(bkey.KeyWithTs([]byte("keyb"), 0))
+		require.EqualValues(t, "keya9999", string(bkey.ParseKey(it.Key())))
 		vs := it.Value()
 		require.EqualValues(t, "9999", string(vs.Value))
 
-		it.Seek(butils.KeyWithTs([]byte("keyb9999b"), 0))
-		require.EqualValues(t, "keyb9999", string(butils.ParseKey(it.Key())))
+		it.Seek(bkey.KeyWithTs([]byte("keyb9999b"), 0))
+		require.EqualValues(t, "keyb9999", string(bkey.ParseKey(it.Key())))
 		vs = it.Value()
 		require.EqualValues(t, "9999", string(vs.Value))
 
-		it.Seek(butils.KeyWithTs([]byte("keyd"), 0))
-		require.EqualValues(t, "keyc9999", string(butils.ParseKey(it.Key())))
+		it.Seek(bkey.KeyWithTs([]byte("keyd"), 0))
+		require.EqualValues(t, "keyc9999", string(bkey.ParseKey(it.Key())))
 		vs = it.Value()
 		require.EqualValues(t, "9999", string(vs.Value))
 	}
@@ -487,7 +487,7 @@ func TestMergingIterator(t *testing.T) {
 	it.Rewind()
 	require.True(t, it.Valid())
 	k := it.Key()
-	require.EqualValues(t, "k1", string(butils.ParseKey(k)))
+	require.EqualValues(t, "k1", string(bkey.ParseKey(k)))
 	vs := it.Value()
 	require.EqualValues(t, "a1", string(vs.Value))
 	require.EqualValues(t, 'A', vs.Meta)
@@ -495,7 +495,7 @@ func TestMergingIterator(t *testing.T) {
 
 	require.True(t, it.Valid())
 	k = it.Key()
-	require.EqualValues(t, "k2", string(butils.ParseKey(k)))
+	require.EqualValues(t, "k2", string(bkey.ParseKey(k)))
 	vs = it.Value()
 	require.EqualValues(t, "a2", string(vs.Value))
 	require.EqualValues(t, 'A', vs.Meta)
@@ -527,7 +527,7 @@ func TestMergingIteratorReversed(t *testing.T) {
 	it.Rewind()
 	require.True(t, it.Valid())
 	k := it.Key()
-	require.EqualValues(t, "k2", string(butils.ParseKey(k)))
+	require.EqualValues(t, "k2", string(bkey.ParseKey(k)))
 	vs := it.Value()
 	require.EqualValues(t, "a2", string(vs.Value))
 	require.EqualValues(t, 'A', vs.Meta)
@@ -535,7 +535,7 @@ func TestMergingIteratorReversed(t *testing.T) {
 
 	require.True(t, it.Valid())
 	k = it.Key()
-	require.EqualValues(t, "k1", string(butils.ParseKey(k)))
+	require.EqualValues(t, "k1", string(bkey.ParseKey(k)))
 	vs = it.Value()
 	require.EqualValues(t, "a1", string(vs.Value))
 	require.EqualValues(t, 'A', vs.Meta)
@@ -567,7 +567,7 @@ func TestMergingIteratorTakeOne(t *testing.T) {
 	it.Rewind()
 	require.True(t, it.Valid())
 	k := it.Key()
-	require.EqualValues(t, "k1", string(butils.ParseKey(k)))
+	require.EqualValues(t, "k1", string(bkey.ParseKey(k)))
 	vs := it.Value()
 	require.EqualValues(t, "a1", string(vs.Value))
 	require.EqualValues(t, 'A', vs.Meta)
@@ -575,7 +575,7 @@ func TestMergingIteratorTakeOne(t *testing.T) {
 
 	require.True(t, it.Valid())
 	k = it.Key()
-	require.EqualValues(t, "k2", string(butils.ParseKey(k)))
+	require.EqualValues(t, "k2", string(bkey.ParseKey(k)))
 	vs = it.Value()
 	require.EqualValues(t, "a2", string(vs.Value))
 	require.EqualValues(t, 'A', vs.Meta)
@@ -607,7 +607,7 @@ func TestMergingIteratorTakeTwo(t *testing.T) {
 	it.Rewind()
 	require.True(t, it.Valid())
 	k := it.Key()
-	require.EqualValues(t, "k1", string(butils.ParseKey(k)))
+	require.EqualValues(t, "k1", string(bkey.ParseKey(k)))
 	vs := it.Value()
 	require.EqualValues(t, "a1", string(vs.Value))
 	require.EqualValues(t, 'A', vs.Meta)
@@ -615,7 +615,7 @@ func TestMergingIteratorTakeTwo(t *testing.T) {
 
 	require.True(t, it.Valid())
 	k = it.Key()
-	require.EqualValues(t, "k2", string(butils.ParseKey(k)))
+	require.EqualValues(t, "k2", string(bkey.ParseKey(k)))
 	vs = it.Value()
 	require.EqualValues(t, "a2", string(vs.Value))
 	require.EqualValues(t, 'A', vs.Meta)

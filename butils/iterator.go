@@ -23,6 +23,7 @@ import (
 	"encoding/binary"
 
 	"github.com/pkg/errors"
+	"github.com/bigbagger/bagger/bkey"
 )
 
 // ValueStruct represents the value info that can be associated with a key, but also the internal
@@ -120,7 +121,7 @@ func (eh *elemHeap) Pop() interface{} {
 	return x
 }
 func (eh elemHeap) Less(i, j int) bool {
-	cmp := CompareKeys(eh[i].itr.Key(), eh[j].itr.Key())
+	cmp := bkey.CompareKeys(eh[i].itr.Key(), eh[j].itr.Key())
 	if cmp < 0 {
 		return !eh[i].reversed
 	}

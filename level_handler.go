@@ -25,6 +25,7 @@ import (
 	"github.com/bigbagger/bagger/btable"
 	"github.com/bigbagger/bagger/butils"
 	"github.com/pkg/errors"
+	"github.com/bigbagger/bagger/bkey"
 )
 
 type levelHandler struct {
@@ -70,7 +71,7 @@ func (s *levelHandler) initTables(tables []*btable.Table) {
 	} else {
 		// Sort tables by keys.
 		sort.Slice(s.tables, func(i, j int) bool {
-			return butils.CompareKeys(s.tables[i].Smallest(), s.tables[j].Smallest()) < 0
+			return bkey.CompareKeys(s.tables[i].Smallest(), s.tables[j].Smallest()) < 0
 		})
 	}
 }
@@ -224,7 +225,7 @@ func (s *levelHandler) getTableForKey(key []byte) ([]*btable.Table, func() error
 	}
 	// For level >= 1, we can do a binary search as key range does not overlap.
 	idx := sort.Search(len(s.tables), func(i int) bool {
-		return butils.CompareKeys(s.tables[i].Biggest(), key) >= 0
+		return bkey.CompareKeys(s.tables[i].Biggest(), key) >= 0
 	})
 	if idx >= len(s.tables) {
 		// Given key is strictly > than every element we have.
@@ -238,7 +239,7 @@ func (s *levelHandler) getTableForKey(key []byte) ([]*btable.Table, func() error
 // get returns value for a given key or the key after that. If not found, return nil.
 func (s *levelHandler) get(key []byte) (butils.ValueStruct, error) {
 	tables, decr := s.getTableForKey(key)
-	keyNoTs := butils.ParseKey(key)
+	keyNoTs := bkey.ParseKey(key)
 
 	var maxVs butils.ValueStruct
 	for _, th := range tables {
@@ -255,8 +256,8 @@ func (s *levelHandler) get(key []byte) (butils.ValueStruct, error) {
 		if !it.Valid() {
 			continue
 		}
-		if butils.SameKey(key, it.Key()) {
-			if version := butils.ParseTs(it.Key()); maxVs.Version < version {
+		if bkey.SameKey(key, it.Key()) {
+			if version := bkey.ParseTs(it.Key()); maxVs.Version < version {
 				maxVs = it.Value()
 				maxVs.Version = version
 			}
@@ -286,10 +287,10 @@ type levelHandlerRLocked struct{}
 // pass an empty parameter declaring such.
 func (s *levelHandler) overlappingTables(_ levelHandlerRLocked, kr keyRange) (int, int) {
 	left := sort.Search(len(s.tables), func(i int) bool {
-		return butils.CompareKeys(kr.left, s.tables[i].Biggest()) <= 0
+		return bkey.CompareKeys(kr.left, s.tables[i].Biggest()) <= 0
 	})
 	right := sort.Search(len(s.tables), func(i int) bool {
-		return butils.CompareKeys(kr.right, s.tables[i].Smallest()) < 0
+		return bkey.CompareKeys(kr.right, s.tables[i].Smallest()) < 0
 	})
 	return left, right
 }

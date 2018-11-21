@@ -28,6 +28,7 @@ import (
 	"github.com/bigbagger/bagger/boptions"
 
 	"github.com/bigbagger/bagger/butils"
+	"github.com/bigbagger/bagger/bkey"
 )
 
 type prefetchStatus uint8
@@ -183,7 +184,7 @@ func (item *Item) yieldItemValue() ([]byte, func(), error) {
 		runCallback(cb)
 		// Do not put baggerMove on the left in append. It seems to cause some sort of manipulation.
 		key = append([]byte{}, baggerMove...)
-		key = append(key, butils.KeyWithTs(item.Key(), item.Version())...)
+		key = append(key, bkey.KeyWithTs(item.Key(), item.Version())...)
 		// Note that we can't set item.key to move key, because that would
 		// change the key user sees before and after this call. Also, this move
 		// logic is internal logic and should not impact the external behavior
@@ -490,7 +491,7 @@ func (it *Iterator) parseItem() bool {
 	}
 
 	// Skip any versions which are beyond the readTs.
-	version := butils.ParseTs(key)
+	version := bkey.ParseTs(key)
 	if version > it.readTs {
 		mi.Next()
 		return false
@@ -509,7 +510,7 @@ func (it *Iterator) parseItem() bool {
 	// If iterating in forward direction, then just checking the last key against current key would
 	// be sufficient.
 	if !it.opt.Reverse {
-		if butils.SameKey(it.lastKey, key) {
+		if bkey.SameKey(it.lastKey, key) {
 			mi.Next()
 			return false
 		}
@@ -541,8 +542,8 @@ FILL:
 	}
 
 	// Reverse direction.
-	nextTs := butils.ParseTs(mi.Key())
-	mik := butils.ParseKey(mi.Key())
+	nextTs := bkey.ParseTs(mi.Key())
+	mik := bkey.ParseKey(mi.Key())
 	if nextTs <= it.readTs && bytes.Equal(mik, item.key) {
 		// This is a valid potential candidate.
 		goto FILL
@@ -558,8 +559,8 @@ func (it *Iterator) fill(item *Item) {
 	item.userMeta = vs.UserMeta
 	item.expiresAt = vs.ExpiresAt
 
-	item.version = butils.ParseTs(it.iitr.Key())
-	item.key = butils.SafeCopy(item.key, butils.ParseKey(it.iitr.Key()))
+	item.version = bkey.ParseTs(it.iitr.Key())
+	item.key = butils.SafeCopy(item.key, bkey.ParseKey(it.iitr.Key()))
 
 	item.vptr = butils.SafeCopy(item.vptr, vs.Value)
 	item.val = nil
@@ -610,9 +611,9 @@ func (it *Iterator) Seek(key []byte) {
 	}
 
 	if !it.opt.Reverse {
-		key = butils.KeyWithTs(key, it.txn.readTs)
+		key = bkey.KeyWithTs(key, it.txn.readTs)
 	} else {
-		key = butils.KeyWithTs(key, 0)
+		key = bkey.KeyWithTs(key, 0)
 	}
 	it.iitr.Seek(key)
 	it.prefetch()

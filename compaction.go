@@ -28,6 +28,7 @@ import (
 
 	"github.com/bigbagger/bagger/btable"
 	"github.com/bigbagger/bagger/butils"
+	"github.com/bigbagger/bagger/bkey"
 )
 
 type keyRange struct {
@@ -54,11 +55,11 @@ func (r keyRange) overlapsWith(dst keyRange) bool {
 	}
 
 	// If my left is greater than dst right, we have no overlap.
-	if butils.CompareKeys(r.left, dst.right) > 0 {
+	if bkey.CompareKeys(r.left, dst.right) > 0 {
 		return false
 	}
 	// If my right is less than dst left, we have no overlap.
-	if butils.CompareKeys(r.right, dst.left) < 0 {
+	if bkey.CompareKeys(r.right, dst.left) < 0 {
 		return false
 	}
 	// We have overlap.
@@ -70,16 +71,16 @@ func getKeyRange(tables []*btable.Table) keyRange {
 	smallest := tables[0].Smallest()
 	biggest := tables[0].Biggest()
 	for i := 1; i < len(tables); i++ {
-		if butils.CompareKeys(tables[i].Smallest(), smallest) < 0 {
+		if bkey.CompareKeys(tables[i].Smallest(), smallest) < 0 {
 			smallest = tables[i].Smallest()
 		}
-		if butils.CompareKeys(tables[i].Biggest(), biggest) > 0 {
+		if bkey.CompareKeys(tables[i].Biggest(), biggest) > 0 {
 			biggest = tables[i].Biggest()
 		}
 	}
 	return keyRange{
-		left:  butils.KeyWithTs(butils.ParseKey(smallest), math.MaxUint64),
-		right: butils.KeyWithTs(butils.ParseKey(biggest), 0),
+		left:  bkey.KeyWithTs(bkey.ParseKey(smallest), math.MaxUint64),
+		right: bkey.KeyWithTs(bkey.ParseKey(biggest), 0),
 	}
 }
 

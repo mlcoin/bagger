@@ -83,8 +83,8 @@ func tableInfo(dir, valueDir string) error {
 
 	tables := db.Tables()
 	for _, t := range tables {
-		lk, lv := butils.ParseKey(t.Left), butils.ParseTs(t.Left)
-		rk, rv := butils.ParseKey(t.Right), butils.ParseTs(t.Right)
+		lk, lv := bkey.ParseKey(t.Left), bkey.ParseTs(t.Left)
+		rk, rv := bkey.ParseKey(t.Right), bkey.ParseTs(t.Right)
 		fmt.Printf("SSTable [L%d, %03d] [%20X, v%-10d -> %20X, v%-10d]\n",
 			t.Level, t.ID, lk, lv, rk, rv)
 	}

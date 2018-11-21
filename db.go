@@ -35,6 +35,7 @@ import (
 	"github.com/bigbagger/bagger/butils"
 	"github.com/pkg/errors"
 	"golang.org/x/net/trace"
+	"github.com/bigbagger/bagger/bkey"
 )
 
 var (
@@ -106,8 +107,8 @@ func (out *DB) replayFunction() func(Entry, valuePointer) error {
 		}
 		first = false
 
-		if out.orc.nextTxnTs < butils.ParseTs(e.Key) {
-			out.orc.nextTxnTs = butils.ParseTs(e.Key)
+		if out.orc.nextTxnTs < bkey.ParseTs(e.Key) {
+			out.orc.nextTxnTs = bkey.ParseTs(e.Key)
 		}
 
 		nk := make([]byte, len(e.Key))
@@ -144,7 +145,7 @@ func (out *DB) replayFunction() func(Entry, valuePointer) error {
 			lastCommit = 0
 
 		} else if e.meta&bitTxn > 0 {
-			txnTs := butils.ParseTs(nk)
+			txnTs := bkey.ParseTs(nk)
 			if lastCommit == 0 {
 				lastCommit = txnTs
 			}
@@ -275,7 +276,7 @@ func Open(opt Options) (db *DB, err error) {
 		go db.flushMemtable(db.closers.memtable) // Need levels controller to be up.
 	}
 
-	headKey := butils.KeyWithTs(head, math.MaxUint64)
+	headKey := bkey.KeyWithTs(head, math.MaxUint64)
 	// Need to pass with timestamp, lsm get removes the last 8 bytes and compares key
 	vs, err := db.get(headKey)
 	if err != nil {
@@ -494,7 +495,7 @@ func (db *DB) get(key []byte) (butils.ValueStruct, error) {
 		// levels, so we can pick up the newer versions, which might have been
 		// compacted down the tree.
 		maxVs = &butils.ValueStruct{}
-		version = butils.ParseTs(key)
+		version = bkey.ParseTs(key)
 	}
 
 	butils.NumGets.Add(1)
@@ -814,7 +815,7 @@ func (db *DB) handleFlushTask(ft flushTask) error {
 
 		// Pick the max commit ts, so in case of crash, our read ts would be higher than all the
 		// commits.
-		headTs := butils.KeyWithTs(head, db.orc.nextTs())
+		headTs := bkey.KeyWithTs(head, db.orc.nextTs())
 		ft.mt.Put(headTs, butils.ValueStruct{Value: offset})
 	}
 
@@ -986,7 +987,7 @@ func (db *DB) RunValueLogGC(discardRatio float64) error {
 	}
 
 	// Find head on disk
-	headKey := butils.KeyWithTs(head, math.MaxUint64)
+	headKey := bkey.KeyWithTs(head, math.MaxUint64)
 	// Need to pass with timestamp, lsm get removes the last 8 bytes and compares key
 	val, err := db.lc.get(headKey, nil)
 	if err != nil {
