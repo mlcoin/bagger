@@ -41,7 +41,7 @@ func (v *ValueStruct) EncodedSize() uint16 {
 		return uint16(sz + 1)
 	}
 
-	enc := sizeVarint(v.ExpiresAt)
+	enc := sizeUvarint(v.ExpiresAt)
 	return uint16(sz + enc)
 }
 
@@ -74,13 +74,11 @@ func (v *ValueStruct) EncodeTo(buf *bytes.Buffer) {
 	buf.Write(v.Value)
 }
 
-func sizeVarint(x uint64) (n int) {
-	for {
-		n++
+func sizeUvarint(x uint64) (n int) {
+	i := 0
+	for x >= 0x80 {
 		x >>= 7
-		if x == 0 {
-			break
-		}
+		i++
 	}
-	return n
+	return i + 1
 }
