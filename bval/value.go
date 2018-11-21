@@ -74,7 +74,7 @@ func (v *ValueStruct) EncodeTo(buf *bytes.Buffer) {
 	buf.Write(v.Value)
 }
 
-func sizeUvarint(x uint64) (n int) {
+func sizeUvarint(x uint64) int {
 	i := 0
 	for x >= 0x80 {
 		x >>= 7

@@ -25,6 +25,7 @@ import (
 	"github.com/pkg/errors"
 )
 
+
 // KeyWithVersion generates a new key by appending ts to key.
 func KeyWithVersion(key []byte, version uint64) []byte {
 	out := make([]byte, len(key)+8)
